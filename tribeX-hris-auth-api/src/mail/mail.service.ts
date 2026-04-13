@@ -496,4 +496,184 @@ export class MailService {
       this.logger.error('Failed to send profile change reviewed email', error);
     }
   }
+
+  async sendApplicationStatusEmail(opts: {
+    to: string;
+    applicantName: string;
+    jobTitle: string;
+    status: 'shortlisted' | 'on_hold' | 'rejected';
+  }): Promise<void> {
+    const statusConfig: Record<string, { label: string; color: string; bg: string; border: string; message: string }> = {
+      shortlisted: {
+        label: 'Shortlisted',
+        color: '#065f46',
+        bg: '#d1fae5',
+        border: '#a7f3d0',
+        message: 'Congratulations! You have been shortlisted for this position. Our team will be in touch to schedule the next steps.',
+      },
+      on_hold: {
+        label: 'On Hold',
+        color: '#92400e',
+        bg: '#fef3c7',
+        border: '#fde68a',
+        message: 'Your application is currently on hold. We appreciate your patience and will notify you when there are updates.',
+      },
+      rejected: {
+        label: 'Not Selected',
+        color: '#991b1b',
+        bg: '#fee2e2',
+        border: '#fecaca',
+        message: 'After careful consideration, we have decided to move forward with other candidates. We appreciate your interest and wish you well in your job search.',
+      },
+    };
+    const cfg = statusConfig[opts.status];
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `Application Update: ${opts.jobTitle}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <div style="background-color: #99e0fe; padding: 32px 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; color: #0c1a2e;">Blues Clues HRIS</h1>
+            </div>
+            <div style="padding: 32px 24px;">
+              <h2 style="margin-top: 0; color: #0c1a2e;">Application Status Update</h2>
+              <p style="color: #374151;">Hi <strong>${opts.applicantName}</strong>,</p>
+              <p style="color: #374151;">We have an update regarding your application for <strong>${opts.jobTitle}</strong>.</p>
+              <div style="background:${cfg.bg};border:1px solid ${cfg.border};border-radius:8px;padding:16px;margin:20px 0;">
+                <p style="margin:0;font-weight:bold;color:${cfg.color};font-size:15px;">Status: ${cfg.label}</p>
+              </div>
+              <p style="color:#374151;">${cfg.message}</p>
+              <p style="margin-top:32px;color:#6b7280;font-size:12px;text-align:center;">This is an automated notification from Blues Clues HRIS.</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send application status email', error);
+    }
+  }
+
+  async sendSfiaFallbackNotificationEmail(opts: {
+    to: string;
+    recruiterName: string;
+    companyName: string;
+    reason: string;
+    jobTitle?: string;
+  }): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `[Action Required] SFIA Ranking Fallback Activated${opts.jobTitle ? ` – ${opts.jobTitle}` : ''}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <div style="background-color: #fef3c7; padding: 32px 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; color: #92400e;">⚠️ SFIA Fallback Alert</h1>
+            </div>
+            <div style="padding: 32px 24px;">
+              <p style="color: #374151;">Hi <strong>${opts.recruiterName}</strong>,</p>
+              <p style="color: #374151;">The SFIA auto-ranking system has been <strong>disabled or fell back to manual mode</strong> for <strong>${opts.companyName}</strong>.</p>
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin:20px 0;">
+                <p style="margin:0;font-weight:bold;color:#92400e;">Reason: ${opts.reason}</p>
+              </div>
+              ${opts.jobTitle ? `<p style="color:#374151;">Affected job: <strong>${opts.jobTitle}</strong></p>` : ''}
+              <p style="color:#374151;">Please log in to the HRIS and <strong>manually rank candidates</strong> until the SFIA system is restored.</p>
+              <p style="margin-top:32px;color:#6b7280;font-size:12px;text-align:center;">Blues Clues HRIS · Automated system alert</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send SFIA fallback notification email', error);
+    }
+  }
+
+  async sendOfferLetterEmail(opts: {
+    to: string;
+    applicantName: string;
+    jobTitle: string;
+    companyName: string;
+    startDate?: string;
+    baseSalary?: number;
+    salaryCurrency?: string;
+    salaryFrequency?: string;
+    benefits?: Record<string, unknown>;
+    expiresAt?: string;
+    portalUrl: string;
+  }): Promise<void> {
+    const salaryLine = opts.baseSalary
+      ? `<p style="color:#374151;"><strong>Compensation:</strong> ${opts.salaryCurrency ?? 'PHP'} ${opts.baseSalary.toLocaleString()} ${opts.salaryFrequency ?? 'monthly'}</p>`
+      : '';
+    const startLine = opts.startDate
+      ? `<p style="color:#374151;"><strong>Proposed Start Date:</strong> ${opts.startDate}</p>`
+      : '';
+    const expiryLine = opts.expiresAt
+      ? `<p style="color:#6b7280;font-size:13px;">This offer expires on <strong>${opts.expiresAt}</strong>. Please respond before then.</p>`
+      : '';
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `Job Offer: ${opts.jobTitle} at ${opts.companyName}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <div style="background-color: #99e0fe; padding: 32px 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; color: #0c1a2e;">Congratulations!</h1>
+            </div>
+            <div style="padding: 32px 24px;">
+              <p style="color: #374151;">Hi <strong>${opts.applicantName}</strong>,</p>
+              <p style="color: #374151;">We are pleased to extend an offer of employment for the position of <strong>${opts.jobTitle}</strong> at <strong>${opts.companyName}</strong>.</p>
+              ${startLine}
+              ${salaryLine}
+              <p style="color:#374151;">Please log in to the applicant portal to review the full offer details and indicate your response.</p>
+              <div style="text-align: center; margin-top: 24px;">
+                <a href="${opts.portalUrl}" style="display:inline-block;padding:12px 28px;background-color:#99e0fe;color:#0c1a2e;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">View Offer</a>
+              </div>
+              ${expiryLine}
+              <p style="margin-top:32px;color:#6b7280;font-size:12px;text-align:center;">Blues Clues HRIS · This is an automated notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send offer letter email', error);
+    }
+  }
+
+  async sendCompBenefitsHandoffEmail(opts: {
+    to: string;
+    hrOfficerName: string;
+    employeeName: string;
+    employeeId: string;
+    companyName: string;
+    portalUrl: string;
+  }): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `[Action Required] New Employee Onboarding Complete – ${opts.employeeName}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+            <div style="background-color: #99e0fe; padding: 32px 24px; text-align: center;">
+              <h1 style="margin: 0; font-size: 22px; color: #0c1a2e;">Onboarding Complete</h1>
+            </div>
+            <div style="padding: 32px 24px;">
+              <p style="color: #374151;">Hi <strong>${opts.hrOfficerName}</strong>,</p>
+              <p style="color: #374151;"><strong>${opts.employeeName}</strong> (ID: ${opts.employeeId}) has successfully completed onboarding at <strong>${opts.companyName}</strong>.</p>
+              <p style="color: #374151;">Please proceed with the <strong>Compensation &amp; Benefits</strong> setup for this employee.</p>
+              <div style="text-align: center; margin-top: 24px;">
+                <a href="${opts.portalUrl}" style="display:inline-block;padding:12px 28px;background-color:#99e0fe;color:#0c1a2e;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;">Go to HR Portal</a>
+              </div>
+              <p style="margin-top:32px;color:#6b7280;font-size:12px;text-align:center;">Blues Clues HRIS · Automated system notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send comp & benefits handoff email', error);
+    }
+  }
 }
