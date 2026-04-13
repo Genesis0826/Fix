@@ -5,9 +5,11 @@ import { ScheduledTasksService } from './scheduled-tasks.service';
 import { SupabaseModule } from '../supabase/supabase.module';
 import { AuditModule } from '../audit/audit.module';
 import { PillarModule } from '../pillar/pillar.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [SupabaseModule, AuditModule, PillarModule],
+  imports: [SupabaseModule, AuditModule, PillarModule, NotificationsModule, MailModule],
   providers: [AdminService, ScheduledTasksService],
   controllers: [AdminController],
   exports: [AdminService, ScheduledTasksService], // Export so other modules can use them

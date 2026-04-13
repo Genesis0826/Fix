@@ -657,6 +657,26 @@ export class OnboardingService {
   async approveSession(sessionId: string, hrUserId?: string) {
     const supabase = this.supabaseService.getClient();
 
+    // Enforce strict 100% completion before approval
+    // Fetch all required items (excluding welcome tab) and verify they are all complete
+    const { data: items } = await supabase
+      .from('onboarding_items')
+      .select(`status, template_items!inner ( is_required, tab_category )`)
+      .eq('session_id', sessionId);
+
+    const trackable = (items ?? []).filter((i: any) => i.template_items?.tab_category !== 'welcome');
+    const required = trackable.filter((i: any) => i.template_items?.is_required);
+    const completed = required.filter((i: any) =>
+      ['approved', 'confirmed', 'issued'].includes(i.status),
+    );
+
+    if (required.length > 0 && completed.length < required.length) {
+      const pct = Math.round((completed.length / required.length) * 100);
+      throw new BadRequestException(
+        `Onboarding is not 100% complete (${pct}% — ${completed.length}/${required.length} required items done). All required items must be approved/confirmed before the session can be approved.`,
+      );
+    }
+
     // Mark session approved
     await supabase
       .from('onboarding_sessions')
@@ -862,7 +882,56 @@ export class OnboardingService {
       this.logger.error(`[approveSession] Failed to sync profile/docs: ${(syncErr as any)?.message}`);
     }
 
+    // Fire Compensation & Benefits handoff integration event (fire-and-forget)
+    // This signals downstream C&B systems that a new employee has been onboarded
+    // and their compensation package needs to be set up.
+    this.logCompensationHandoffEvent(sessionId, resolvedUserId, supabase).catch((err) => {
+      this.logger.warn(`[approveSession] C&B handoff event failed (non-fatal): ${(err as Error)?.message}`);
+    });
+
     return { message: 'Onboarding approved', session_id: sessionId, status: 'approved' };
+  }
+
+  /**
+   * Logs the Compensation & Benefits handoff event after onboarding approval.
+   * This acts as the integration point for downstream payroll / C&B systems.
+   * Future implementations should publish to an event bus or call a C&B API.
+   *
+   * CREDENTIAL SEND TIMING:
+   * Credentials (set-password invite link) are sent to the employee's LOGIN email
+   * address at the time of ONBOARDING APPROVAL (i.e., inside approveSession /
+   * approveOnboardingSubmission).  The invite link expires after 48 hours.
+   * Do NOT send credentials at session initiation — the account may not exist yet.
+   */
+  private async logCompensationHandoffEvent(
+    sessionId: string,
+    userId: string | undefined,
+    supabase: any,
+  ): Promise<void> {
+    if (!userId) return;
+    this.logger.log(
+      `[C&B Handoff] Onboarding session ${sessionId} approved for user ${userId}. ` +
+      `Compensation & Benefits setup event fired. ` +
+      `TODO: Integrate with payroll / C&B system via event bus or API call.`,
+    );
+    // Audit log the handoff
+    try {
+      const { data: profile } = await supabase
+        .from('user_profile')
+        .select('company_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (profile?.company_id) {
+        await this.auditService.log(
+          `COMPENSATION_HANDOFF: Onboarding approved for user ${userId} — C&B setup required`,
+          'system',
+          profile.company_id,
+          userId,
+        );
+      }
+    } catch {
+      // non-fatal
+    }
   }
 
   // =========================================================
@@ -1427,6 +1496,22 @@ export class OnboardingService {
     if (submission.status !== 'submitted') throw new BadRequestException('Submission must be in "submitted" state to approve.');
     if (!submission.preferred_username) throw new BadRequestException('Applicant must provide a preferred username before approval.');
 
+    // Enforce strict 100% completion via the linked onboarding_session (pipeline hire path)
+    const { data: linkedSession } = await supabase
+      .from('onboarding_sessions')
+      .select('session_id, progress_percentage')
+      .eq('account_id', submission.applicant_id)
+      .maybeSingle();
+
+    if (linkedSession) {
+      const pct = linkedSession.progress_percentage ?? 0;
+      if (pct < 100) {
+        throw new BadRequestException(
+          `Onboarding is not 100% complete (${pct}%). All required items must be approved/confirmed before this submission can be approved.`,
+        );
+      }
+    }
+
     const { data: role } = await supabase.from('role').select('role_id').eq('role_id', roleId).maybeSingle();
     if (!role) throw new BadRequestException('Selected role does not exist.');
 
@@ -1521,11 +1606,20 @@ export class OnboardingService {
     const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
     const inviteLink = `${appUrl}/set-password?token=${rawToken}`;
     const { data: applicant } = await supabase.from('applicant_profile').select('email').eq('applicant_id', submission.applicant_id).maybeSingle();
+
+    // CREDENTIAL SEND TIMING: credentials are sent here, at the moment of APPROVAL.
+    // The invite link is only created once the employee account (user_profile) is provisioned.
+    // Do NOT send earlier (e.g. at session initiation) because the account does not yet exist.
     try {
       await this.mailService.sendInvite(applicant?.email ?? '', inviteLink);
     } catch {
       this.logger.log(`[onboarding approve] invite link for ${applicant?.email}: ${inviteLink}`);
     }
+
+    // Fire Compensation & Benefits handoff event (fire-and-forget)
+    this.logCompensationHandoffEvent(submissionId, userId, supabase).catch((err) => {
+      this.logger.warn(`[approveOnboardingSubmission] C&B handoff event failed (non-fatal): ${(err as Error)?.message}`);
+    });
 
     return { user_id: userId, employee_id: employeeCode, email: applicant?.email ?? '', invite_expires_at: expiresAt };
   }

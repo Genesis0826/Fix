@@ -5,11 +5,13 @@ import { AuditModule } from '../audit/audit.module';
 import { MailModule } from '../mail/mail.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { AdminModule } from '../admin/admin.module';
+import { PillarModule } from '../pillar/pillar.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
 
 @Module({
-  imports: [AuthModule, SupabaseModule, AuditModule, MailModule, OnboardingModule, AdminModule],
+  imports: [AuthModule, SupabaseModule, AuditModule, MailModule, OnboardingModule, AdminModule, PillarModule, NotificationsModule],
   controllers: [JobsController],
   providers: [JobsService],
   exports: [JobsService],

@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { AdminService } from './admin.service';
 import { PillarService } from '../pillar/pillar.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { MailService } from '../mail/mail.service';
 
 export interface CompanyHealthCheck {
   company_id: string;
@@ -20,6 +22,8 @@ export class ScheduledTasksService implements OnModuleInit, OnModuleDestroy {
     private readonly adminService: AdminService,
     private readonly pillarService: PillarService,
     private readonly supabaseService: SupabaseService,
+    private readonly notificationsService: NotificationsService,
+    private readonly mailService: MailService,
   ) {}
 
   onModuleInit() {
@@ -104,8 +108,28 @@ export class ScheduledTasksService implements OnModuleInit, OnModuleDestroy {
         `🚨 SFIA Auto-Disabled Alert: Company ${companyId} - ${failureCount} consecutive Pillar failures detected`,
       );
 
-      // NOTE: Email notifications can be added in a future hardening pass
-      // when specific email alerting patterns are established
+      // Send in-app notification to all HR users in the company
+      await this.notificationsService.notifyAllHRInCompany(companyId, {
+        type: 'SFIA_AUTO_DISABLED',
+        title: '⚠️ SFIA Ranking Auto-Disabled',
+        message: `SFIA ranking has been automatically disabled after ${failureCount} consecutive Pillar service failures. Manual ranking is now active. Re-enable SFIA once the Pillar service recovers.`,
+        metadata: { failure_count: failureCount, company_id: companyId },
+      });
+
+      // Best-effort email notification to company admin email if configured
+      try {
+        const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL;
+        if (adminEmail) {
+          await this.mailService.sendSfiaDisabledAlert({
+            to: adminEmail,
+            companyId,
+            failureCount,
+          });
+        }
+      } catch (emailErr) {
+        // Email is optional — log but do not propagate
+        this.logger.warn(`[SFIA Alert] Failed to send email alert: ${(emailErr as Error)?.message}`);
+      }
     } catch (error) {
       this.logger.error(`Failed to send SFIA disabled alert for company ${companyId}:`, error);
     }
