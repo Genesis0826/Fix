@@ -11,6 +11,8 @@ import * as crypto from 'node:crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
+import { PillarService } from '../pillar/pillar.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateJobPostingDto } from './dto/create-job-posting.dto';
 import { UpdateJobPostingDto } from './dto/update-job-posting.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -109,6 +111,8 @@ export class JobsService {
     private readonly mailService: MailService,
     private readonly onboardingService: OnboardingService,
     private readonly adminService: AdminService,
+    private readonly pillarService: PillarService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -417,6 +421,22 @@ export class JobsService {
         this.logger.warn(
           `⚠️ SFIA ranking disabled for job ${jobPostingId}. Falling back to manual ranking.`,
         );
+
+        // Notify all HR Recruiters/Officers in-app about the SFIA fallback
+        this.notificationsService.notifyAllHRInCompany(companyId, {
+          type: 'SFIA_FALLBACK',
+          title: 'SFIA Ranking Unavailable — Manual Ranking Active',
+          message: `SFIA auto-ranking is currently disabled for job posting ${jobPostingId}. Candidates are being ranked manually. Reason: ${fallbackReason}`,
+          metadata: { job_posting_id: jobPostingId, reason: fallbackReason },
+        }).catch(() => {});
+
+        // Send email notification to admin/recruiter
+        this.mailService.sendSfiaFallbackNotification({
+          companyId,
+          jobPostingId,
+          reason: fallbackReason,
+          consecutiveFailures: sfiaSettings.consecutive_failures,
+        }).catch(() => {});
       }
     }
 
@@ -536,6 +556,8 @@ export class JobsService {
       previous_rank: previousRankMap.get(item.application_id) ?? null,
       new_rank: item.rank,
       changed_at: new Date().toISOString(),
+      reason: 'operator_override',
+      triggered_by: performedBy,
     }));
 
     const { error: historyError } = await supabase
@@ -622,12 +644,12 @@ export class JobsService {
   }
 
   // NOSONAR: Complex method needed for application status workflow - requires refactoring in future sprint
-  async updateApplicationStatus(applicationId: string, status: string, companyId: string) {
+  async updateApplicationStatus(applicationId: string, status: string, companyId: string, performedBy?: string, performerRole?: string) {
     const supabase = this.supabaseService.getClient();
 
     const { data: app, error: appError } = await supabase
       .from('job_applications')
-      .select('application_id, job_posting_id, applicant_id')
+      .select('application_id, job_posting_id, applicant_id, status')
       .eq('application_id', applicationId)
       .maybeSingle();
 
@@ -636,12 +658,156 @@ export class JobsService {
     if (app) {
       await this.findOnePosting(app.job_posting_id, companyId);
       await this.validateAndUpdateRegularApplication(app, status, companyId, applicationId, supabase);
+
+      // Log recruitment timeline event for traceability
+      void this.logTimelineEvent({
+        applicationId,
+        jobPostingId: app.job_posting_id,
+        companyId,
+        performedBy: performedBy ?? null,
+        performerRole: performerRole ?? null,
+        eventType: this.resolveTimelineEventType(status),
+        fromStatus: app.status,
+        toStatus: status,
+      });
+
+      // Notify applicant of explicit ranking statuses
+      void this.notifyApplicantOfStatusChange(applicationId, app.applicant_id, status);
+
       return { message: 'Application status updated' };
     }
 
     // Fall back to SFIA applications table
     await this.validateAndUpdateSfiaApplication(applicationId, status, companyId, supabase);
+
+    // Log timeline event for SFIA application status change
+    const { data: sfiaApp } = await supabase
+      .from('job_application_sfia')
+      .select('job_posting_id, applicant_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+    if (sfiaApp) {
+      void this.logTimelineEvent({
+        applicationId,
+        jobPostingId: sfiaApp.job_posting_id,
+        companyId,
+        performedBy: performedBy ?? null,
+        performerRole: performerRole ?? null,
+        eventType: this.resolveTimelineEventType(status),
+        fromStatus: null,
+        toStatus: status,
+      });
+      void this.notifyApplicantOfStatusChange(applicationId, sfiaApp.applicant_id, status);
+    }
+
     return { message: 'Application status updated' };
+  }
+
+  /**
+   * Map an application status value to a timeline event type.
+   */
+  private resolveTimelineEventType(status: string): string {
+    const s = status.toLowerCase();
+    if (s === 'hired') return 'hired';
+    if (s === 'rejected' || s === 'not_shortlisted') return 'rejected';
+    if (s === 'shortlisted') return 'status_change';
+    if (s === 'on_hold') return 'status_change';
+    if (s.includes('interview')) return 'interview_scheduled';
+    if (s === 'offer_sent') return 'offer_sent';
+    return 'status_change';
+  }
+
+  /**
+   * Persist a recruitment_timeline_events row (fire-and-forget; never throws).
+   */
+  private async logTimelineEvent(opts: {
+    applicationId: string;
+    jobPostingId: string;
+    companyId: string;
+    performedBy: string | null;
+    performerRole: string | null;
+    eventType: string;
+    fromStatus: string | null;
+    toStatus: string;
+    notes?: string;
+  }): Promise<void> {
+    try {
+      const supabase = this.supabaseService.getClient();
+      await supabase.from('recruitment_timeline_events').insert({
+        event_id: crypto.randomUUID(),
+        application_id: opts.applicationId,
+        job_posting_id: opts.jobPostingId,
+        company_id: opts.companyId,
+        performed_by: opts.performedBy,
+        performer_role: opts.performerRole,
+        event_type: opts.eventType,
+        from_status: opts.fromStatus,
+        to_status: opts.toStatus,
+        notes: opts.notes ?? null,
+        occurred_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      this.logger.warn(`[Timeline] Failed to log event for application ${opts.applicationId}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Send in-app notification to applicant when their ranking status changes to
+   * shortlisted, not_shortlisted, or on_hold (explicit applicant-facing statuses).
+   * Fire-and-forget — never throws.
+   */
+  private async notifyApplicantOfStatusChange(
+    applicationId: string,
+    applicantId: string,
+    status: string,
+  ): Promise<void> {
+    const s = status.toLowerCase();
+    if (!['shortlisted', 'not_shortlisted', 'on_hold'].includes(s)) return;
+
+    const titleMap: Record<string, string> = {
+      shortlisted:     'Congratulations — you have been shortlisted!',
+      not_shortlisted: 'Application update',
+      on_hold:         'Application on hold',
+    };
+    const messageMap: Record<string, string> = {
+      shortlisted:     'You have been shortlisted for the position. HR will be in touch with next steps.',
+      not_shortlisted: 'Thank you for your application. After careful consideration, we will not be moving forward at this time.',
+      on_hold:         'Your application has been placed on hold. We will reach out when the position moves forward.',
+    };
+
+    try {
+      const supabase = this.supabaseService.getClient();
+
+      // Retrieve applicant's company_id for notification scoping
+      const { data: profile } = await supabase
+        .from('applicant_profile')
+        .select('company_id, email, first_name, last_name')
+        .eq('applicant_id', applicantId)
+        .maybeSingle();
+
+      if (!profile?.company_id) return;
+
+      await this.notificationsService.createNotification({
+        userId: applicantId,
+        companyId: profile.company_id,
+        type: `APPLICATION_${s.toUpperCase()}`,
+        title: titleMap[s],
+        message: messageMap[s],
+        metadata: { application_id: applicationId },
+      });
+
+      // Send email notification for shortlisted/not_shortlisted statuses
+      if (profile.email && (s === 'shortlisted' || s === 'not_shortlisted')) {
+        const applicantName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Applicant';
+        this.mailService.sendApplicationStatusEmail({
+          to: profile.email,
+          applicantName,
+          status: s as 'shortlisted' | 'not_shortlisted',
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this.logger.warn(`[StatusNotify] Failed for applicant ${applicantId}: ${(err as Error).message}`);
+    }
   }
 
   private async validateAndUpdateRegularApplication(
@@ -1306,7 +1472,7 @@ export class JobsService {
     // Block hired/onboarding applicants from applying to new jobs
     const { data: applicantProfile } = await supabase
       .from('applicant_profile')
-      .select('status')
+      .select('status, first_name, last_name, resume_url')
       .eq('applicant_id', applicantId)
       .maybeSingle();
     if (applicantProfile?.status === 'onboarding' || applicantProfile?.status === 'converted_employee') {
@@ -1352,7 +1518,132 @@ export class JobsService {
       }
     }
 
+    // Fire-and-forget: trigger Pillar CV parsing for this application if resume is available.
+    // Parsed skills are stored in extracted_cv_skills linked to this job application.
+    void this.triggerCvParsingForApplication(
+      application_id,
+      jobPostingId,
+      applicantId,
+      applicantProfile,
+    );
+
     return data;
+  }
+
+  /**
+   * Trigger Pillar CV parsing after an application is submitted.
+   * Results are stored in extracted_cv_skills (per-application, per-job).
+   * Failures are recorded on applicant_profile.cv_parsing_status.
+   * This is fire-and-forget — never throws to the caller.
+   */
+  private async triggerCvParsingForApplication(
+    applicationId: string,
+    jobPostingId: string,
+    applicantId: string,
+    applicantProfile: { first_name?: string; last_name?: string; resume_url?: string } | null,
+  ): Promise<void> {
+    try {
+      const supabase = this.supabaseService.getClient();
+      const resumeUrl = applicantProfile?.resume_url ?? null;
+
+      if (!resumeUrl) {
+        // No CV uploaded yet — mark as pending, will be parsed when CV is uploaded
+        await supabase
+          .from('applicant_profile')
+          .update({ cv_parsing_status: 'pending' })
+          .eq('applicant_id', applicantId);
+        return;
+      }
+
+      const applicantName = [applicantProfile?.first_name, applicantProfile?.last_name]
+        .filter(Boolean)
+        .join(' ') || 'Applicant';
+
+      // If resume_url is a storage path (not a public URL) generate a signed URL for Pillar
+      let cvUrl = resumeUrl;
+      if (!resumeUrl.startsWith('https://')) {
+        const { data: urlData } = await supabase.storage
+          .from('applicant-resumes')
+          .createSignedUrl(resumeUrl, 60 * 60);
+        cvUrl = urlData?.signedUrl ?? resumeUrl;
+      }
+
+      // Fetch job SFIA demand skills to guide extraction
+      const demandSkills = await this.getJobDemandSkills(jobPostingId);
+      const jobSfiaSkills = demandSkills.map((s) => ({
+        skill_name: s.skill_name,
+        required_level: s.required_level,
+      }));
+
+      // Call Pillar
+      const parseResult = await this.pillarService.parseCv(cvUrl, applicantName);
+
+      if (!parseResult.success) {
+        await supabase
+          .from('applicant_profile')
+          .update({
+            cv_parsing_status: 'failed',
+            cv_parsing_error_message: parseResult.error ?? 'Unknown error',
+          })
+          .eq('applicant_id', applicantId);
+        this.logger.warn(`[CV Parsing] Failed for applicant ${applicantId}: ${parseResult.error}`);
+        return;
+      }
+
+      // Extract SFIA skills from parsed CV
+      const extractedSkills = await this.pillarService.extractSfiaSkills(parseResult, jobSfiaSkills);
+
+      // Store each extracted skill in extracted_cv_skills
+      if (extractedSkills.length > 0) {
+        const skillRows = extractedSkills.map((skill) => ({
+          extraction_id: crypto.randomUUID(),
+          application_id: applicationId,
+          applicant_id: applicantId,
+          skill_name: skill.skill_name,
+          candidate_level: skill.candidate_level,
+          years_of_experience: skill.years_of_experience,
+          extracted_from: skill.extracted_from,
+          confidence_score: skill.confidence_score,
+          pillar_parse_response: parseResult.data ?? null,
+          extracted_at: new Date().toISOString(),
+          extracted_by: 'pillar_service',
+        }));
+
+        const { error: skillsError } = await supabase
+          .from('extracted_cv_skills')
+          .insert(skillRows);
+
+        if (skillsError) {
+          this.logger.warn(`[CV Parsing] Failed to save extracted skills for application ${applicationId}: ${skillsError.message}`);
+        }
+      }
+
+      // Update applicant profile with parsing completion status
+      await supabase
+        .from('applicant_profile')
+        .update({
+          cv_parsing_status: 'completed',
+          resume_parsed_at: new Date().toISOString(),
+          cv_parsing_error_message: null,
+        })
+        .eq('applicant_id', applicantId);
+
+      this.logger.log(`[CV Parsing] Completed for applicant ${applicantId}, application ${applicationId}: ${extractedSkills.length} skills extracted`);
+    } catch (err) {
+      this.logger.error(`[CV Parsing] Unexpected error for application ${applicationId}: ${(err as Error).message}`);
+      try {
+        const supabase = this.supabaseService.getClient();
+        await supabase
+          .from('applicant_profile')
+          .update({
+            cv_parsing_status: 'failed',
+            cv_parsing_error_message: (err as Error).message,
+          })
+          .eq('applicant_id', applicantId);
+      } catch {
+        // best-effort
+      }
+    }
   }
 
   async getMyApplicationDetail(applicationId: string, applicantId: string) {
@@ -1803,5 +2094,312 @@ export class JobsService {
         `SFIA ranking requires the ${tableName} table, but it is not available in the configured Supabase project.`,
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Interview Evaluations — interviewers submit, HR Officers retrieve
+  // ---------------------------------------------------------------------------
+
+  async submitInterviewEvaluation(
+    applicationId: string,
+    companyId: string,
+    evaluatorId: string,
+    evaluatorRole: string,
+    dto: {
+      stage: string;
+      evaluator_name?: string;
+      technical_score?: number;
+      communication_score?: number;
+      culture_fit_score?: number;
+      overall_score?: number;
+      recommendation?: string;
+      strengths?: string;
+      areas_for_improvement?: string;
+      additional_notes?: string;
+      criteria_scores?: Record<string, unknown>;
+    },
+  ) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app, error: appError } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (appError) throw new InternalServerErrorException(appError.message);
+    if (!app) throw new NotFoundException('Application not found');
+
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const evaluationId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('interview_evaluations')
+      .insert({
+        evaluation_id: evaluationId,
+        application_id: applicationId,
+        job_posting_id: app.job_posting_id,
+        company_id: companyId,
+        stage: dto.stage,
+        evaluator_id: evaluatorId,
+        evaluator_name: dto.evaluator_name ?? null,
+        technical_score: dto.technical_score ?? null,
+        communication_score: dto.communication_score ?? null,
+        culture_fit_score: dto.culture_fit_score ?? null,
+        overall_score: dto.overall_score ?? null,
+        recommendation: dto.recommendation ?? null,
+        strengths: dto.strengths ?? null,
+        areas_for_improvement: dto.areas_for_improvement ?? null,
+        additional_notes: dto.additional_notes ?? null,
+        criteria_scores: dto.criteria_scores ?? null,
+        submitted_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    await this.auditService.log(
+      `Interview evaluation submitted for application ${applicationId}, stage: ${dto.stage}`,
+      evaluatorId,
+      companyId,
+    );
+
+    // Log timeline event
+    void this.logTimelineEvent({
+      applicationId,
+      jobPostingId: app.job_posting_id,
+      companyId,
+      performedBy: evaluatorId,
+      performerRole: evaluatorRole,
+      eventType: 'stage_handoff',
+      fromStatus: null,
+      toStatus: dto.stage,
+      notes: `Evaluation submitted. Recommendation: ${dto.recommendation ?? 'N/A'}`,
+    });
+
+    return data;
+  }
+
+  async getInterviewEvaluations(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app, error: appError } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (appError) throw new InternalServerErrorException(appError.message);
+    if (!app) throw new NotFoundException('Application not found');
+
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const { data, error } = await supabase
+      .from('interview_evaluations')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('submitted_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ?? [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offer Management — HR drafts, sends, and tracks candidate response
+  // ---------------------------------------------------------------------------
+
+  async createOffer(
+    applicationId: string,
+    companyId: string,
+    createdBy: string,
+    dto: {
+      position_title?: string;
+      department?: string;
+      start_date?: string;
+      base_salary?: number;
+      currency?: string;
+      salary_frequency?: string;
+      benefits_summary?: string;
+      benefits_detail?: Record<string, unknown>;
+      offer_letter_text?: string;
+      expires_at?: string;
+    },
+  ) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app, error: appError } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id, applicant_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (appError) throw new InternalServerErrorException(appError.message);
+    if (!app) throw new NotFoundException('Application not found');
+
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const offerId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('job_offers')
+      .insert({
+        offer_id: offerId,
+        application_id: applicationId,
+        job_posting_id: app.job_posting_id,
+        company_id: companyId,
+        applicant_id: app.applicant_id,
+        status: 'draft',
+        position_title: dto.position_title ?? null,
+        department: dto.department ?? null,
+        start_date: dto.start_date ?? null,
+        base_salary: dto.base_salary ?? null,
+        currency: dto.currency ?? 'PHP',
+        salary_frequency: dto.salary_frequency ?? 'monthly',
+        benefits_summary: dto.benefits_summary ?? null,
+        benefits_detail: dto.benefits_detail ?? null,
+        offer_letter_text: dto.offer_letter_text ?? null,
+        created_by: createdBy,
+        expires_at: dto.expires_at ?? null,
+        created_at: now,
+        updated_at: now,
+      })
+      .select()
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    await this.auditService.log(
+      `Offer draft created for application ${applicationId}`,
+      createdBy,
+      companyId,
+    );
+
+    return data;
+  }
+
+  async sendOffer(offerId: string, companyId: string, sentBy: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: offer, error: offerError } = await supabase
+      .from('job_offers')
+      .select('*')
+      .eq('offer_id', offerId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (offerError) throw new InternalServerErrorException(offerError.message);
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.status !== 'draft') throw new BadRequestException('Only draft offers can be sent');
+
+    const now = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from('job_offers')
+      .update({ status: 'sent', sent_at: now, sent_by: sentBy, updated_at: now })
+      .eq('offer_id', offerId);
+
+    if (updateError) throw new InternalServerErrorException(updateError.message);
+
+    // Fetch applicant email to send offer
+    const { data: profile } = await supabase
+      .from('applicant_profile')
+      .select('first_name, last_name, email, company_id')
+      .eq('applicant_id', offer.applicant_id)
+      .maybeSingle();
+
+    if (profile?.email) {
+      const applicantName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Applicant';
+      this.mailService.sendOfferEmail({
+        to: profile.email,
+        applicantName,
+        positionTitle: offer.position_title ?? 'the position',
+        department: offer.department,
+        startDate: offer.start_date,
+        baseSalary: offer.base_salary,
+        currency: offer.currency ?? 'PHP',
+        salaryFrequency: offer.salary_frequency ?? 'monthly',
+        benefitsSummary: offer.benefits_summary,
+        offerLetterText: offer.offer_letter_text,
+        expiresAt: offer.expires_at,
+      }).catch(() => {});
+    }
+
+    // Update application status to offer_sent
+    await supabase
+      .from('job_applications')
+      .update({ status: 'offer_sent' })
+      .eq('application_id', offer.application_id);
+
+    // Log timeline event
+    void this.logTimelineEvent({
+      applicationId: offer.application_id,
+      jobPostingId: offer.job_posting_id,
+      companyId,
+      performedBy: sentBy,
+      performerRole: 'HR Officer',
+      eventType: 'offer_sent',
+      fromStatus: 'shortlisted',
+      toStatus: 'offer_sent',
+    });
+
+    await this.auditService.log(
+      `Offer sent for application ${offer.application_id}`,
+      sentBy,
+      companyId,
+    );
+
+    return { message: 'Offer sent successfully', offer_id: offerId };
+  }
+
+  async getOffersForApplication(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app, error: appError } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (appError) throw new InternalServerErrorException(appError.message);
+    if (!app) throw new NotFoundException('Application not found');
+
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const { data, error } = await supabase
+      .from('job_offers')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ?? [];
+  }
+
+  async getRecruitmentTimeline(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app, error: appError } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (appError) throw new InternalServerErrorException(appError.message);
+    if (!app) throw new NotFoundException('Application not found');
+
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const { data, error } = await supabase
+      .from('recruitment_timeline_events')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('occurred_at', { ascending: true });
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ?? [];
   }
 }

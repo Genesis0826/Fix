@@ -496,4 +496,153 @@ export class MailService {
       this.logger.error('Failed to send profile change reviewed email', error);
     }
   }
+
+  /**
+   * Notify an applicant that their application status has changed to
+   * 'shortlisted' or 'not_shortlisted'.
+   */
+  async sendApplicationStatusEmail(opts: {
+    to: string;
+    applicantName: string;
+    status: 'shortlisted' | 'not_shortlisted';
+  }): Promise<void> {
+    const isShortlisted = opts.status === 'shortlisted';
+    const subject = isShortlisted
+      ? 'Great news — you have been shortlisted!'
+      : 'Update on your application';
+    const headline = isShortlisted ? 'You\'ve been shortlisted! 🎉' : 'Application Status Update';
+    const body = isShortlisted
+      ? 'We are pleased to inform you that you have been <strong>shortlisted</strong> for the position. Our HR team will be in touch with next steps shortly.'
+      : 'Thank you for your interest and the time you invested in applying. After careful consideration, we will not be moving forward with your application at this time. We encourage you to apply for future openings.';
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:linear-gradient(135deg,#0f172a 0%,#172554 100%);padding:32px 24px;text-align:center;">
+              <h1 style="margin:0;font-size:22px;color:#ffffff;">Blues Clues HRIS</h1>
+            </div>
+            <div style="padding:32px 24px;">
+              <h2 style="margin-top:0;color:#0c1a2e;">${headline}</h2>
+              <p style="color:#374151;">Hi <strong>${opts.applicantName}</strong>,</p>
+              <p style="color:#374151;">${body}</p>
+              <p style="margin-top:24px;color:#6b7280;font-size:12px;">Log in to your applicant portal to check your application status.</p>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px 24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · This is an automated notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send application status email', error);
+    }
+  }
+
+  /**
+   * Notify HR admins / recruiters that SFIA ranking has fallen back to manual
+   * mode because consecutive Pillar health check failures exceeded the threshold.
+   * Recipients are looked up from the admin notification email env var.
+   */
+  async sendSfiaFallbackNotification(opts: {
+    companyId: string;
+    jobPostingId: string;
+    reason: string;
+    consecutiveFailures: number;
+  }): Promise<void> {
+    const adminEmail = this.config.get<string>('ADMIN_NOTIFICATION_EMAIL');
+    if (!adminEmail) return;
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: adminEmail,
+        subject: '[HRIS Alert] SFIA Ranking Unavailable — Manual Mode Active',
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:#7f1d1d;padding:24px;text-align:center;">
+              <h1 style="margin:0;font-size:20px;color:#fff;">⚠️ SFIA Ranking Alert</h1>
+            </div>
+            <div style="padding:28px 24px;">
+              <p style="color:#374151;font-size:15px;"><strong>SFIA auto-ranking has been disabled</strong> for job posting <code>${opts.jobPostingId}</code>.</p>
+              <p style="color:#374151;"><strong>Reason:</strong> ${opts.reason}</p>
+              <p style="color:#374151;"><strong>Consecutive failures:</strong> ${opts.consecutiveFailures}</p>
+              <p style="color:#374151;">Manual ranking is now active. Please review the SFIA configuration in the admin panel and re-enable once the Pillar service recovers.</p>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:14px 24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · System Alert</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send SFIA fallback notification email', error);
+    }
+  }
+
+  /**
+   * Send a formal offer email to the applicant.
+   * This is called after the HR Officer clicks "Send Offer" in the system.
+   */
+  async sendOfferEmail(opts: {
+    to: string;
+    applicantName: string;
+    positionTitle: string;
+    department?: string;
+    startDate?: string;
+    baseSalary?: number;
+    currency: string;
+    salaryFrequency: string;
+    benefitsSummary?: string;
+    offerLetterText?: string;
+    expiresAt?: string;
+  }): Promise<void> {
+    const salaryLine = opts.baseSalary
+      ? `<p><strong>Compensation:</strong> ${opts.currency} ${opts.baseSalary.toLocaleString()} / ${opts.salaryFrequency}</p>`
+      : '';
+    const departmentLine = opts.department ? `<p><strong>Department:</strong> ${opts.department}</p>` : '';
+    const startDateLine = opts.startDate ? `<p><strong>Start Date:</strong> ${opts.startDate}</p>` : '';
+    const benefitsLine = opts.benefitsSummary ? `<p><strong>Benefits:</strong> ${opts.benefitsSummary}</p>` : '';
+    const expiryLine = opts.expiresAt
+      ? `<p style="color:#dc2626;font-size:13px;"><strong>This offer expires on:</strong> ${new Date(opts.expiresAt).toLocaleDateString()}</p>`
+      : '';
+    const letterSection = opts.offerLetterText
+      ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-top:20px;font-size:13px;color:#374151;">${opts.offerLetterText}</div>`
+      : '';
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `Job Offer — ${opts.positionTitle}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:linear-gradient(135deg,#0f172a 0%,#172554 100%);padding:32px 24px;text-align:center;">
+              <h1 style="margin:0;font-size:22px;color:#ffffff;">Blues Clues HRIS</h1>
+            </div>
+            <div style="padding:32px 24px;">
+              <h2 style="margin-top:0;color:#0c1a2e;">Congratulations, ${opts.applicantName}!</h2>
+              <p style="color:#374151;">We are pleased to extend the following offer of employment:</p>
+              <p><strong>Position:</strong> ${opts.positionTitle}</p>
+              ${departmentLine}
+              ${startDateLine}
+              ${salaryLine}
+              ${benefitsLine}
+              ${expiryLine}
+              ${letterSection}
+              <p style="margin-top:24px;color:#374151;">Please log in to your applicant portal to accept or decline this offer.</p>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px 24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · This is an automated notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send offer email', error);
+    }
+  }
 }
