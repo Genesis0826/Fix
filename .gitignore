@@ -1,0 +1,14 @@
+.claude/
+HANDOFF.md
+ToAsk.md
+CLAUDE.md
+HANDOFF_AUTH_SYSTEM.md
+ui-ux-pro-max-skills/
+
+# Environment files — set real values in Railway dashboard, not here
+.env
+.env.local
+.env.production
+.env.production.local
+blues-clues-hris-mobile/.env
+frontend/blues-clues-hris-frontend-web/.env.local
