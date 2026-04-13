@@ -46,7 +46,8 @@ export class PillarService {
   private readonly mockMode: boolean;
 
   constructor(private readonly configService: ConfigService) {
-    this.pillarApiUrl = this.configService.get('PILLAR_API_URL') || 'https://api.pillarhr.com';
+    this.pillarApiUrl =
+      this.configService.get('PILLAR_API_URL') || 'https://api.pillarhr.com';
     this.pillarApiKey = this.configService.get('PILLAR_API_KEY') || '';
     this.mockMode = !this.pillarApiKey; // Enable mock mode if no API key
 
@@ -57,7 +58,10 @@ export class PillarService {
     }
   }
 
-  async parseCv(cvUrl: string, applicantName: string): Promise<PillarCVParseResponse> {
+  async parseCv(
+    cvUrl: string,
+    applicantName: string,
+  ): Promise<PillarCVParseResponse> {
     if (this.mockMode) {
       return this.mockParseCv(cvUrl, applicantName);
     }
@@ -84,7 +88,10 @@ export class PillarService {
       return await response.json();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Pillar CV parse failed for ${applicantName}:`, errorMsg);
+      this.logger.error(
+        `Pillar CV parse failed for ${applicantName}:`,
+        errorMsg,
+      );
       return {
         success: false,
         error: `Failed to parse CV: ${errorMsg}`,
@@ -112,8 +119,8 @@ export class PillarService {
 
     // For each SFIA job skill, check if CV mentions it
     for (const jobSkill of jobSfiaSkills) {
-      const cvSkill = cvData.data.skills.find(
-        (s) => s.name.toLowerCase().includes(jobSkill.skill_name.toLowerCase()),
+      const cvSkill = cvData.data.skills.find((s) =>
+        s.name.toLowerCase().includes(jobSkill.skill_name.toLowerCase()),
       );
 
       if (cvSkill) {
@@ -182,7 +189,10 @@ export class PillarService {
     }
   }
 
-  private mockParseCv(cvUrl: string, applicantName: string): PillarCVParseResponse {
+  private mockParseCv(
+    cvUrl: string,
+    applicantName: string,
+  ): PillarCVParseResponse {
     // Mock CV parsing for testing
     return {
       success: true,
@@ -222,7 +232,8 @@ export class PillarService {
             endDate: '2019-12-31',
           },
         ],
-        summary: 'Experienced full-stack developer with 5+ years in JavaScript ecosystem',
+        summary:
+          'Experienced full-stack developer with 5+ years in JavaScript ecosystem',
       },
     };
   }

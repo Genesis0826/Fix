@@ -10,6 +10,12 @@ import { NotificationsModule } from '../notifications/notifications.module';
 @Module({
   controllers: [UsersController],
   providers: [UsersService],
-  imports: [AuthModule, SupabaseModule, MailModule, AuditModule, NotificationsModule],
+  imports: [
+    AuthModule,
+    SupabaseModule,
+    MailModule,
+    AuditModule,
+    NotificationsModule,
+  ],
 })
 export class UsersModule {}

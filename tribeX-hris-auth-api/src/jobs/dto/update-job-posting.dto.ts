@@ -1,27 +1,35 @@
 import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateJobPostingDto {
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   title?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   description?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   location?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   employment_type?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   salary_range?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   department_id?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   closes_at?: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   status?: string;
 }

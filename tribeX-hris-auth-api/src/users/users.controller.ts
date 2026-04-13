@@ -73,7 +73,11 @@ export class UsersController {
   ) {
     if (!name?.trim())
       throw new BadRequestException('Department name is required.');
-    return this.usersService.createDepartment(name.trim(), req.user.company_id, req.user.sub_userid);
+    return this.usersService.createDepartment(
+      name.trim(),
+      req.user.company_id,
+      req.user.sub_userid,
+    );
   }
 
   @Get('stats')
@@ -100,14 +104,23 @@ export class UsersController {
   ) {
     if (!name?.trim())
       throw new BadRequestException('Department name is required.');
-    return this.usersService.renameDepartment(id, name.trim(), req.user.company_id, req.user.sub_userid);
+    return this.usersService.renameDepartment(
+      id,
+      name.trim(),
+      req.user.company_id,
+      req.user.sub_userid,
+    );
   }
 
   @UseGuards(RolesGuard)
   @Roles(...ADMIN_ONLY)
   @Delete('departments/:id')
   async deleteDepartment(@Param('id') id: string, @Req() req: any) {
-    return this.usersService.deleteDepartment(id, req.user.company_id, req.user.sub_userid);
+    return this.usersService.deleteDepartment(
+      id,
+      req.user.company_id,
+      req.user.sub_userid,
+    );
   }
 
   @Get('companies')
@@ -144,7 +157,11 @@ export class UsersController {
 
   @Post('me/change-requests')
   submitChangeRequest(@Req() req: any, @Body() dto: CreateChangeRequestDto) {
-    return this.usersService.submitChangeRequest(req.user.sub_userid, req.user.company_id, dto);
+    return this.usersService.submitChangeRequest(
+      req.user.sub_userid,
+      req.user.company_id,
+      dto,
+    );
   }
 
   @Get('me/change-requests')
@@ -156,7 +173,10 @@ export class UsersController {
   @UseGuards(RolesGuard)
   @Roles('HR Officer', 'HR Recruiter', 'Admin', 'System Admin')
   getChangeRequests(@Req() req: any, @Query('status') status?: string) {
-    return this.usersService.getChangeRequestsForCompany(req.user.company_id, status);
+    return this.usersService.getChangeRequestsForCompany(
+      req.user.company_id,
+      status,
+    );
   }
 
   @Patch('change-requests/:requestId')
@@ -167,7 +187,12 @@ export class UsersController {
     @Req() req: any,
     @Body() dto: ReviewChangeRequestDto,
   ) {
-    return this.usersService.reviewChangeRequest(requestId, req.user.sub_userid, req.user.company_id, dto);
+    return this.usersService.reviewChangeRequest(
+      requestId,
+      req.user.sub_userid,
+      req.user.company_id,
+      dto,
+    );
   }
 
   @Get(':id')
@@ -227,7 +252,12 @@ export class UsersController {
     @Req() req: any,
   ) {
     if (!email?.trim()) throw new BadRequestException('email is required');
-    return this.usersService.assignCompanyEmail(id, email.trim().toLowerCase(), req.user.company_id, req.user.sub_userid);
+    return this.usersService.assignCompanyEmail(
+      id,
+      email.trim().toLowerCase(),
+      req.user.company_id,
+      req.user.sub_userid,
+    );
   }
 
   @UseGuards(RolesGuard)
@@ -279,7 +309,11 @@ export class UsersController {
     @Body('document_type') docType: string,
   ) {
     if (!docType) throw new BadRequestException('document_type is required.');
-    return this.usersService.uploadEmployeeDocument(req.user.sub_userid, docType, file);
+    return this.usersService.uploadEmployeeDocument(
+      req.user.sub_userid,
+      docType,
+      file,
+    );
   }
 
   @Delete('me/documents/:id')
@@ -309,7 +343,12 @@ export class UsersController {
     @Req() req: any,
     @Body('hr_notes') hrNotes: string,
   ) {
-    if (!hrNotes) throw new BadRequestException('hr_notes is required when rejecting.');
-    return this.usersService.rejectEmployeeDocument(id, req.user.sub_userid, hrNotes);
+    if (!hrNotes)
+      throw new BadRequestException('hr_notes is required when rejecting.');
+    return this.usersService.rejectEmployeeDocument(
+      id,
+      req.user.sub_userid,
+      hrNotes,
+    );
   }
 }

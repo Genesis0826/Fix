@@ -1,26 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsBoolean, IsArray, ValidateNested, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsOptional,
+  IsUUID,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TemplateItemDto {
   @ApiProperty({ example: 'upload' })
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   type: string;
 
   @ApiProperty({ example: 'documents' })
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   tab_category: string;
 
   @ApiProperty({ example: 'NBI Clearance' })
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   title: string;
 
   @ApiProperty({ required: false })
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   description?: string;
 
-  @ApiProperty({ required: false, description: 'JSON string for form fields, handbook text, or video URL' })
-  @IsString() @IsOptional()
+  @ApiProperty({
+    required: false,
+    description: 'JSON string for form fields, handbook text, or video URL',
+  })
+  @IsString()
+  @IsOptional()
   rich_content?: string;
 
   @ApiProperty({ example: true })
@@ -30,7 +47,8 @@ export class TemplateItemDto {
 
 export class CreateTemplateDto {
   @ApiProperty({ example: 'Software Engineer Onboarding' })
-  @IsString() @IsNotEmpty()
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @ApiProperty()

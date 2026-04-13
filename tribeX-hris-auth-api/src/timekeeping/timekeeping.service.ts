@@ -9,7 +9,12 @@ import { SupabaseService } from '../supabase/supabase.service';
 import { TimePunchDto } from './dto/time-punch.dto';
 import { ReportAbsenceDto } from './dto/report-absence.dto';
 
-type AttendanceLogType = 'time-in' | 'time-out' | 'break-start' | 'break-end' | 'absence';
+type AttendanceLogType =
+  | 'time-in'
+  | 'time-out'
+  | 'break-start'
+  | 'break-end'
+  | 'absence';
 type ClockType = 'ON-TIME' | 'LATE' | 'EARLY' | 'OVERTIME';
 
 type TimeLogRow = {
@@ -132,9 +137,11 @@ export class TimekeepingService {
       return d;
     }
 
-    const ampmMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(timeStr);
+    const ampmMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(
+      timeStr,
+    );
     if (ampmMatch) {
-      let [, hh, mm, ss, ampm] = ampmMatch;
+      const [, hh, mm, ss, ampm] = ampmMatch;
       let hour = Number(hh);
 
       if (ampm.toUpperCase() === 'AM') {
@@ -209,7 +216,9 @@ export class TimekeepingService {
     return data ?? null;
   }
 
-  private async getScheduleForToday(employeeId: string): Promise<ScheduleRow | null> {
+  private async getScheduleForToday(
+    employeeId: string,
+  ): Promise<ScheduleRow | null> {
     const schedule = await this.getScheduleForEmployee(employeeId);
     if (!schedule) return null;
     if (!this.isScheduledForToday(schedule.workdays)) return null;
@@ -282,7 +291,9 @@ export class TimekeepingService {
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const log_id = crypto.randomUUID();
-    const clockType = schedule ? this.computeClockTypeForTimeIn(nowDate, schedule) : null;
+    const clockType = schedule
+      ? this.computeClockTypeForTimeIn(nowDate, schedule)
+      : null;
 
     const { error: insertError } = await supabase
       .from('attendance_time_logs')
@@ -363,7 +374,9 @@ export class TimekeepingService {
     const nowDate = new Date();
     const now = nowDate.toISOString();
     const log_id = crypto.randomUUID();
-    const clockType = schedule ? this.computeClockTypeForTimeOut(nowDate, schedule) : null;
+    const clockType = schedule
+      ? this.computeClockTypeForTimeOut(nowDate, schedule)
+      : null;
 
     const { error: insertError } = await supabase
       .from('attendance_time_logs')
@@ -514,7 +527,8 @@ export class TimekeepingService {
 
     let query = supabase
       .from('attendance_time_logs')
-      .select(`
+      .select(
+        `
         log_id,
         employee_id,
         schedule_id,
@@ -529,7 +543,8 @@ export class TimekeepingService {
         log_status,
         absence_reason,
         absence_notes
-      `)
+      `,
+      )
       .in('employee_id', employeeIds)
       .order('timestamp', { ascending: false });
 
@@ -568,7 +583,8 @@ export class TimekeepingService {
 
     const { data: logs, error: logsError } = await supabase
       .from('attendance_time_logs')
-      .select(`
+      .select(
+        `
         log_id,
         employee_id,
         schedule_id,
@@ -581,7 +597,8 @@ export class TimekeepingService {
         clock_type,
         status,
         log_status
-      `)
+      `,
+      )
       .eq('employee_id', targetUser.employee_id)
       .gte('timestamp', `${date}T00:00:00.000Z`)
       .lte('timestamp', `${date}T23:59:59.999Z`)
@@ -616,7 +633,9 @@ export class TimekeepingService {
 
     const employeeId = await this.getEmployeeId(userId);
     if (!employeeId) {
-      throw new BadRequestException('Employee profile not found. Cannot report absence.');
+      throw new BadRequestException(
+        'Employee profile not found. Cannot report absence.',
+      );
     }
 
     const { data: existing } = await supabase
@@ -652,8 +671,15 @@ export class TimekeepingService {
 
     if (error) throw new Error(error.message);
 
-    this.logger.log(`Absence reported — employee: ${employeeId}, reason: ${dto.reason}`);
-    return { log_id, date: today, reason: dto.reason, notes: dto.notes ?? null };
+    this.logger.log(
+      `Absence reported — employee: ${employeeId}, reason: ${dto.reason}`,
+    );
+    return {
+      log_id,
+      date: today,
+      reason: dto.reason,
+      notes: dto.notes ?? null,
+    };
   }
 
   private groupByDate(logs: any[]) {

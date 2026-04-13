@@ -7,7 +7,12 @@ export type IncidentSeverity = 'WARNING' | 'ERROR' | 'CRITICAL';
 export class AuditService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
-  async log(action: string, performedBy: string, companyId: string, targetUserId?: string) {
+  async log(
+    action: string,
+    performedBy: string,
+    companyId: string,
+    targetUserId?: string,
+  ) {
     const { error } = await this.supabaseService
       .getClient()
       .from('admin_audit_logs')
@@ -48,7 +53,10 @@ export class AuditService {
       });
 
     if (error) {
-      console.error('[AuditService] Failed to write incident log:', error.message);
+      console.error(
+        '[AuditService] Failed to write incident log:',
+        error.message,
+      );
     }
   }
 

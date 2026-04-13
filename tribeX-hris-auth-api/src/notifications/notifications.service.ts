@@ -28,7 +28,10 @@ export class NotificationsService {
       });
 
     if (error) {
-      this.logger.error('[NotificationsService] Failed to create notification:', error.message);
+      this.logger.error(
+        '[NotificationsService] Failed to create notification:',
+        error.message,
+      );
     }
   }
 
@@ -48,15 +51,24 @@ export class NotificationsService {
       .eq('company_id', companyId);
 
     if (error) {
-      this.logger.error('[NotificationsService] Failed to fetch HR users:', error.message);
+      this.logger.error(
+        '[NotificationsService] Failed to fetch HR users:',
+        error.message,
+      );
       return;
     }
 
     const HR_ROLES = ['HR Officer', 'HR Recruiter', 'Admin', 'System Admin'];
-    const targets = (hrUsers ?? []).filter((u: any) => HR_ROLES.includes(u.role?.role_name));
+    const targets = (hrUsers ?? []).filter((u: any) =>
+      HR_ROLES.includes(u.role?.role_name),
+    );
 
     for (const user of targets) {
-      await this.createNotification({ userId: user.user_id, companyId, ...payload });
+      await this.createNotification({
+        userId: user.user_id,
+        companyId,
+        ...payload,
+      });
     }
   }
 
@@ -70,7 +82,10 @@ export class NotificationsService {
       .limit(limit);
 
     if (error) {
-      this.logger.error('[NotificationsService] Failed to fetch notifications:', error.message);
+      this.logger.error(
+        '[NotificationsService] Failed to fetch notifications:',
+        error.message,
+      );
       return [];
     }
     return data ?? [];
@@ -85,7 +100,10 @@ export class NotificationsService {
       .eq('user_id', userId);
 
     if (error) {
-      this.logger.error('[NotificationsService] Failed to mark notification read:', error.message);
+      this.logger.error(
+        '[NotificationsService] Failed to mark notification read:',
+        error.message,
+      );
     }
   }
 
@@ -98,7 +116,10 @@ export class NotificationsService {
       .eq('is_read', false);
 
     if (error) {
-      this.logger.error('[NotificationsService] Failed to mark all notifications read:', error.message);
+      this.logger.error(
+        '[NotificationsService] Failed to mark all notifications read:',
+        error.message,
+      );
     }
   }
 }

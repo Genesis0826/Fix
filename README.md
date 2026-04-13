@@ -14,12 +14,56 @@ What was fixed and added in this session:
 - Identified and corrected a backend table-name mismatch by switching the scheduled health-check query from `companies` to `company`.
 - Pushed the updated work to the requested repository.
 
-Known gaps still left for future work:
+## Sprint 3 Fixes & Implementations (this PR)
 
-- Recruitment timeline handoff tracking.
-- Interview evaluation persistence.
-- Offer management and compensation/benefits flow.
-- Any remaining schema/table naming mismatches that are still not aligned with the code.
+The following gaps identified in the markdown requirement docs have been fully addressed:
+
+### Database Migrations (`/migrations/`)
+
+Run these SQL files against your Supabase project **in order**:
+
+| File | Description |
+|------|-------------|
+| `001_create_sfia_settings.sql` | Creates `sfia_settings` table with constraints, defaults, seed for existing companies, and index |
+| `002_alter_job_application_sfia_ranking_source.sql` | Adds `ranking_source` enum column to `job_application_sfia` with backfill |
+| `003_create_extracted_cv_skills.sql` | Creates `extracted_cv_skills` table with indexes for CV parsing results |
+| `004_alter_applicant_profile_cv_fields.sql` | Adds `resume_parsed_at`, `cv_parsing_status`, `cv_parsing_error_message` to `applicant_profile` |
+| `005_create_sfia_health_checks.sql` | Creates `sfia_health_checks` audit table for Pillar health monitoring |
+| `006_alter_manual_ranking_history_reason.sql` | Adds `reason` and `triggered_by` columns to `manual_ranking_history` |
+| `007_create_interview_evaluations.sql` | Creates `interview_evaluations` table for technical/final interview records |
+| `008_create_recruitment_timeline.sql` | Creates `recruitment_timeline` table for handoff event logging |
+| `009_create_job_offers.sql` | Creates `job_offers` table for offer draft/send/accept flow |
+
+### SFIA & CV Parsing
+
+- **Pillar CV parsing is now wired into application submission**: After an applicant submits a job application, the system automatically triggers Pillar CV parsing (async/non-blocking) if the applicant has a resume uploaded. Extracted SFIA skills are persisted to `extracted_cv_skills` keyed to both the applicant and the specific job application.
+- **CV parsing status tracking**: `applicant_profile` now has `cv_parsing_status` (`pending` / `completed` / `failed`), `resume_parsed_at`, and `cv_parsing_error_message`.
+- **SFIA fallback notifications**: When SFIA is auto-disabled due to Pillar failures, the system now sends both email and in-app notifications to all HR Recruiters and HR Officers in the affected company.
+
+### Job Requisition
+
+- **Applicant status notifications**: When an application is updated to `shortlisted`, `on_hold`, `rejected`, or `hired`, the applicant now receives both an in-app notification and a status email.
+- **Recruitment timeline event logging**: All key application lifecycle events (`application_submitted`, status changes, interview scheduling, offer sent/accepted, etc.) are now persisted to `recruitment_timeline`.
+  - New endpoint: `GET /jobs/applications/:applicationId/timeline`
+- **Interview evaluations**: HR can now create, update, and retrieve structured interview evaluations (with rating, recommendation, scores) per application/stage.
+  - `POST /jobs/applications/:applicationId/evaluations`
+  - `PATCH /jobs/applications/:applicationId/evaluations/:evaluationId`
+  - `GET /jobs/applications/:applicationId/evaluations`
+- **Offer management**: Full offer lifecycle — draft, send, applicant accept/decline.
+  - `POST /jobs/applications/:applicationId/offer` — create draft
+  - `POST /jobs/applications/:applicationId/offer/:offerId/send` — send to applicant
+  - `GET /jobs/applications/:applicationId/offer` — get latest offer (HR)
+  - `GET /jobs/applicant/my-offers` — applicant view pending offers
+  - `POST /jobs/applicant/my-applications/:applicationId/offer/:offerId/respond` — applicant accept/decline
+
+### Onboarding
+
+- **100% completion gate**: `approveSession` now enforces that all required onboarding items are `approved` or `confirmed` before the session can be approved. Returns a `400 Bad Request` listing the number of incomplete items if validation fails.
+- **Compensation & Benefits handoff**: After onboarding approval, the system now fires an audit log entry and in-app notification to all HR Officers and Admins indicating the new employee is ready for C&B enrollment.
+
+### New Environment Variables
+
+No new environment variables are required. The Pillar integration uses the existing `PILLAR_API_KEY` and `PILLAR_API_URL` (falls back to mock mode if not set).
 
 GDocs Link:
 https://docs.google.com/document/d/1QbcjtozYNobPMb_ffn4uEWH5RwJ_TpOB4eTlkHVu4oE/edit?tab=t.0
@@ -27,6 +71,7 @@ https://docs.google.com/document/d/1QbcjtozYNobPMb_ffn4uEWH5RwJ_TpOB4eTlkHVu4oE/
 **Stack:** NestJS 11 · Next.js 16 · React Native (Expo) · Supabase · JWT · Tailwind CSS · shadcn/ui
 
 ---
+
 
 ## Repository Structure
 

@@ -7,6 +7,10 @@ export class UploadDocumentDto {
   @IsNotEmpty()
   onboardingItemId: string;
 
-  @ApiProperty({ type: 'string', format: 'binary', description: 'PDF, JPG, or PNG (Max 5MB)' })
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    description: 'PDF, JPG, or PNG (Max 5MB)',
+  })
   file: any;
 }

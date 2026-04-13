@@ -12,7 +12,13 @@ import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [AuthModule, SupabaseModule, MailModule, AuditModule, NotificationsModule],
+  imports: [
+    AuthModule,
+    SupabaseModule,
+    MailModule,
+    AuditModule,
+    NotificationsModule,
+  ],
   controllers: [
     ApplicantOnboardingController,
     ApplicantPortalOnboardingController,

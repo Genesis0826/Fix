@@ -23,7 +23,11 @@ export class AdminController {
   ) {
     // NOTE: Auth guards (JWT + System Admin role check) to be added in security hardening pass
     const adminUserId = req.user?.id;
-    return this.adminService.updateSfiaSettings(companyId, updates, adminUserId);
+    return this.adminService.updateSfiaSettings(
+      companyId,
+      updates,
+      adminUserId,
+    );
   }
 
   @Patch('toggle/:companyId')

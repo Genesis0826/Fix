@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Post, Param, Body, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Param,
+  Body,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
@@ -33,13 +42,19 @@ export class HrOnboardingController {
 
   @Patch('items/:onboardingItemId')
   @Roles(...HR_ONLY)
-  @ApiOperation({ summary: 'Approve, reject, or update status of an onboarding item' })
+  @ApiOperation({
+    summary: 'Approve, reject, or update status of an onboarding item',
+  })
   updateItemStatus(
     @Param('onboardingItemId') onboardingItemId: string,
     @Body() dto: UpdateTaskStatusDto,
     @Req() req: any,
   ) {
-    return this.onboardingService.updateItemStatus(onboardingItemId, dto, req.user.sub_userid);
+    return this.onboardingService.updateItemStatus(
+      onboardingItemId,
+      dto,
+      req.user.sub_userid,
+    );
   }
 
   @Post('remarks')
@@ -52,14 +67,23 @@ export class HrOnboardingController {
   @Patch('sessions/:sessionId/deadline')
   @Roles(...HR_ONLY)
   @ApiOperation({ summary: 'Update the deadline of an onboarding session' })
-  updateDeadline(@Param('sessionId') sessionId: string, @Body() dto: UpdateDeadlineDto) {
-    return this.onboardingService.updateSessionDeadline(sessionId, dto.deadline_date);
+  updateDeadline(
+    @Param('sessionId') sessionId: string,
+    @Body() dto: UpdateDeadlineDto,
+  ) {
+    return this.onboardingService.updateSessionDeadline(
+      sessionId,
+      dto.deadline_date,
+    );
   }
 
   @Post('sessions/:sessionId/approve')
   @Roles(...HR_ONLY)
   @ApiOperation({ summary: 'Final approval of completed onboarding' })
   approveSession(@Param('sessionId') sessionId: string, @Req() req: any) {
-    return this.onboardingService.approveSession(sessionId, req.user.sub_userid);
+    return this.onboardingService.approveSession(
+      sessionId,
+      req.user.sub_userid,
+    );
   }
 }

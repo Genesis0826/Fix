@@ -39,6 +39,7 @@ export class CreateUserDto {
   @IsOptional()
   start_date?: string; // ISO date string, e.g. "2024-07-01"
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   company_id?: string;
 }

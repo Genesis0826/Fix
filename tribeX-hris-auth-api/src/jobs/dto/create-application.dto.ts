@@ -5,12 +5,14 @@ export class ApplicationAnswerDto {
   @IsString()
   question_id: string;
 
-  @IsString() @IsOptional()
+  @IsString()
+  @IsOptional()
   answer_value?: string;
 }
 
 export class CreateApplicationDto {
-  @IsArray() @IsOptional()
+  @IsArray()
+  @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => ApplicationAnswerDto)
   answers?: ApplicationAnswerDto[];

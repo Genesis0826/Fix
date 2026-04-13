@@ -17,9 +17,18 @@ export class SaveOnboardingDto {
   @ApiPropertyOptional() @IsDateString() @IsOptional() date_of_birth?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() nationality?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() civil_status?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() emergency_contact_name?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() emergency_contact_phone?: string;
-  @ApiPropertyOptional() @IsString() @IsOptional() emergency_contact_relationship?: string;
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  emergency_contact_name?: string;
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  emergency_contact_phone?: string;
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  emergency_contact_relationship?: string;
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()

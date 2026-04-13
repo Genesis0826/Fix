@@ -1,4 +1,11 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ApplicationQuestionDto {
@@ -11,10 +18,12 @@ export class ApplicationQuestionDto {
   @IsOptional()
   options?: any;
 
-  @IsBoolean() @IsOptional()
+  @IsBoolean()
+  @IsOptional()
   is_required?: boolean;
 
-  @IsNumber() @IsOptional()
+  @IsNumber()
+  @IsOptional()
   sort_order?: number;
 }
 

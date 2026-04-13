@@ -57,9 +57,9 @@ const PERMISSION_COLUMNS = {
   delete: 'can_delete',
 } as const;
 
-const PERMISSION_KEYS = Object.keys(
-  PERMISSION_COLUMNS,
-) as Array<keyof typeof PERMISSION_COLUMNS>;
+const PERMISSION_KEYS = Object.keys(PERMISSION_COLUMNS) as Array<
+  keyof typeof PERMISSION_COLUMNS
+>;
 
 const ROLE_DISPLAY_ORDER = [
   'System Admin',
@@ -109,9 +109,7 @@ const LIFECYCLE_MODULE_DEFINITIONS: LifecycleModuleDefinition[] = [
     matches: (feature) => {
       const featureName = normalizeFeatureText(feature.feature_name);
       const moduleGroup = normalizeFeatureText(feature.module_group);
-      return (
-        featureName === 'recruitment' || moduleGroup === 'recruitment'
-      );
+      return featureName === 'recruitment' || moduleGroup === 'recruitment';
     },
   },
   {
@@ -212,7 +210,9 @@ export class UsersService {
     const roleRecord = roleEntry as Record<string, unknown>;
     const roleName = roleRecord.role_name;
     if (typeof roleName !== 'string' || !roleName.trim()) {
-      throw new BadRequestException(`Module "${moduleId}" is missing a role_name.`);
+      throw new BadRequestException(
+        `Module "${moduleId}" is missing a role_name.`,
+      );
     }
     if (!roleNames.includes(roleName)) {
       throw new BadRequestException(
@@ -220,7 +220,11 @@ export class UsersService {
       );
     }
     const permissions = roleRecord.permissions;
-    if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) {
+    if (
+      !permissions ||
+      typeof permissions !== 'object' ||
+      Array.isArray(permissions)
+    ) {
       throw new BadRequestException(
         `Module "${moduleId}" must include a permissions object for "${roleName}".`,
       );
@@ -263,20 +267,26 @@ export class UsersService {
         throw new BadRequestException('Each entry must include a module_id.');
       }
       if (providedById.has(moduleId)) {
-        throw new BadRequestException(`Duplicate lifecycle module "${moduleId}" found.`);
+        throw new BadRequestException(
+          `Duplicate lifecycle module "${moduleId}" found.`,
+        );
       }
       providedById.set(moduleId, entry);
     }
 
     for (const moduleId of providedById.keys()) {
       if (!LIFECYCLE_MODULE_DEFINITIONS.some((d) => d.module_id === moduleId)) {
-        throw new BadRequestException(`Unknown lifecycle module "${moduleId}".`);
+        throw new BadRequestException(
+          `Unknown lifecycle module "${moduleId}".`,
+        );
       }
     }
 
     return LIFECYCLE_MODULE_DEFINITIONS.map((defaultModule) => {
       const provided = providedById.get(defaultModule.module_id);
-      const providedRoles = Array.isArray(provided?.roles) ? provided.roles : [];
+      const providedRoles = Array.isArray(provided?.roles)
+        ? provided.roles
+        : [];
 
       const providedRolesByName = new Map<string, PermissionSet>();
       for (const roleEntry of providedRoles) {
@@ -297,7 +307,8 @@ export class UsersService {
         ...defaultModule,
         roles: roleNames.map((roleName) => ({
           role_name: roleName,
-          permissions: providedRolesByName.get(roleName) ?? this.buildEmptyPermissionSet(),
+          permissions:
+            providedRolesByName.get(roleName) ?? this.buildEmptyPermissionSet(),
         })),
       };
     });
@@ -314,17 +325,26 @@ export class UsersService {
       .select('department_id, company_id')
       .eq('department_id', dto.department_id)
       .maybeSingle();
-    if (departmentError) throw new InternalServerErrorException(departmentError.message);
-    if (!departmentRow) throw new BadRequestException('Selected department does not exist.');
+    if (departmentError)
+      throw new InternalServerErrorException(departmentError.message);
+    if (!departmentRow)
+      throw new BadRequestException('Selected department does not exist.');
     if (departmentRow.company_id && departmentRow.company_id !== companyId) {
-      throw new BadRequestException('Selected department belongs to a different company.');
+      throw new BadRequestException(
+        'Selected department belongs to a different company.',
+      );
     }
   }
 
-  private throwInsertUserError(insertError: { message: string; code?: string }): never {
+  private throwInsertUserError(insertError: {
+    message: string;
+    code?: string;
+  }): never {
     const dbCode = (insertError as any)?.code as string | undefined;
     if (dbCode === '23505') {
-      throw new ConflictException('A user with the same username or email already exists.');
+      throw new ConflictException(
+        'A user with the same username or email already exists.',
+      );
     }
     if (dbCode === '23503') {
       throw new BadRequestException('Invalid role or department selected.');
@@ -339,7 +359,9 @@ export class UsersService {
     rowsToUpsert: RoleFeatureRow[],
   ): void {
     for (const roleSetting of module.roles) {
-      const roleGroup = roleGroups.find((g) => g.role_name === roleSetting.role_name);
+      const roleGroup = roleGroups.find(
+        (g) => g.role_name === roleSetting.role_name,
+      );
       if (!roleGroup) continue;
       for (const roleId of roleGroup.role_ids) {
         for (const featureId of moduleFeatureIds) {
@@ -397,17 +419,19 @@ export class UsersService {
     }
 
     const supabase = this.supabaseService.getClient();
-    const [{ data: roles, error: rolesError }, { data: features, error: featuresError }] =
-      await Promise.all([
-        supabase
-          .from('role')
-          .select('role_id, role_name')
-          .eq('company_id', companyId),
-        supabase
-          .from('feature')
-          .select('feature_id, feature_name, module_group, is_active')
-          .eq('is_active', true),
-      ]);
+    const [
+      { data: roles, error: rolesError },
+      { data: features, error: featuresError },
+    ] = await Promise.all([
+      supabase
+        .from('role')
+        .select('role_id, role_name')
+        .eq('company_id', companyId),
+      supabase
+        .from('feature')
+        .select('feature_id, feature_name, module_group, is_active')
+        .eq('is_active', true),
+    ]);
 
     if (rolesError) throw new InternalServerErrorException(rolesError.message);
     if (featuresError)
@@ -417,7 +441,9 @@ export class UsersService {
     const featureIdsByModule = this.mapFeatureIdsByModule(
       (features ?? []) as FeatureRow[],
     );
-    const allRoleIds = [...new Set(roleGroups.flatMap((group) => group.role_ids))];
+    const allRoleIds = [
+      ...new Set(roleGroups.flatMap((group) => group.role_ids)),
+    ];
     const allFeatureIds = [
       ...new Set(Object.values(featureIdsByModule).flat()),
     ];
@@ -489,30 +515,33 @@ export class UsersService {
 
     const supabase = this.supabaseService.getClient();
 
-    const [{ data: roles, error: rolesError }, { data: features, error: featuresError }] =
-      await Promise.all([
-        supabase
-          .from('role')
-          .select('role_id, role_name')
-          .eq('company_id', companyId),
-        supabase
-          .from('feature')
-          .select('feature_id, feature_name, module_group, is_active')
-          .eq('is_active', true),
-      ]);
+    const [
+      { data: roles, error: rolesError },
+      { data: features, error: featuresError },
+    ] = await Promise.all([
+      supabase
+        .from('role')
+        .select('role_id, role_name')
+        .eq('company_id', companyId),
+      supabase
+        .from('feature')
+        .select('feature_id, feature_name, module_group, is_active')
+        .eq('is_active', true),
+    ]);
 
     if (rolesError) throw new InternalServerErrorException(rolesError.message);
     if (featuresError)
       throw new InternalServerErrorException(featuresError.message);
 
-    const roleGroups = this.mapRoleIdsByRoleName(
-      (roles ?? []) as RoleRow[],
-    );
+    const roleGroups = this.mapRoleIdsByRoleName((roles ?? []) as RoleRow[]);
     const roleNames = roleGroups.map((role) => role.role_name);
     const featureIdsByModule = this.mapFeatureIdsByModule(
       (features ?? []) as FeatureRow[],
     );
-    const normalizedModules = this.normalizeLifecycleModules(modules, roleNames);
+    const normalizedModules = this.normalizeLifecycleModules(
+      modules,
+      roleNames,
+    );
 
     const rowsToUpsert: RoleFeatureRow[] = [];
 
@@ -523,7 +552,12 @@ export class UsersService {
           `No features are configured in the database for "${module.name}".`,
         );
       }
-      this.collectModuleRows(module, roleGroups, moduleFeatureIds, rowsToUpsert);
+      this.collectModuleRows(
+        module,
+        roleGroups,
+        moduleFeatureIds,
+        rowsToUpsert,
+      );
     }
 
     if (rowsToUpsert.length > 0) {
@@ -704,7 +738,12 @@ export class UsersService {
     return data;
   }
 
-  async renameDepartment(id: string, name: string, companyId: string, performedBy: string) {
+  async renameDepartment(
+    id: string,
+    name: string,
+    companyId: string,
+    performedBy: string,
+  ) {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('department')
@@ -826,11 +865,7 @@ export class UsersService {
     return { total: count ?? 0 };
   }
 
-  async create(
-    dto: CreateUserDto,
-    companyId: string,
-    adminUserId: string,
-  ) {
+  async create(dto: CreateUserDto, companyId: string, adminUserId: string) {
     const supabase = this.supabaseService.getClient();
     const user_id = crypto.randomUUID();
     const email = dto.email.trim();
@@ -885,7 +920,10 @@ export class UsersService {
     }
 
     const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
     const { error: inviteError } = await supabase.from('user_invites').insert({
@@ -1042,7 +1080,12 @@ export class UsersService {
     return { message: 'User deactivated successfully' };
   }
 
-  async assignCompanyEmail(userId: string, newEmail: string, companyId: string, adminUserId: string) {
+  async assignCompanyEmail(
+    userId: string,
+    newEmail: string,
+    companyId: string,
+    adminUserId: string,
+  ) {
     const supabase = this.supabaseService.getClient();
 
     const { data: user, error: findError } = await supabase
@@ -1053,7 +1096,8 @@ export class UsersService {
       .maybeSingle();
 
     if (findError) throw new BadRequestException(findError.message);
-    if (!user) throw new NotFoundException('Employee not found in your company');
+    if (!user)
+      throw new NotFoundException('Employee not found in your company');
 
     // Ensure no other employee already uses this email
     const { data: taken } = await supabase
@@ -1063,9 +1107,15 @@ export class UsersService {
       .neq('user_id', userId)
       .maybeSingle();
 
-    if (taken) throw new ConflictException('This email is already in use by another employee');
+    if (taken)
+      throw new ConflictException(
+        'This email is already in use by another employee',
+      );
 
-    await supabase.from('user_profile').update({ email: newEmail }).eq('user_id', userId);
+    await supabase
+      .from('user_profile')
+      .update({ email: newEmail })
+      .eq('user_id', userId);
 
     // Revoke active sessions so the employee must log in again with the new email
     await supabase
@@ -1097,9 +1147,13 @@ export class UsersService {
     if (findError) throw new BadRequestException(findError.message);
     if (!user) throw new NotFoundException('User not found in your company');
     if (user.account_status === 'Inactive')
-      throw new BadRequestException('Cannot resend invite to a deactivated account.');
+      throw new BadRequestException(
+        'Cannot resend invite to a deactivated account.',
+      );
     if (user.password_hash)
-      throw new BadRequestException('User has already activated their account.');
+      throw new BadRequestException(
+        'User has already activated their account.',
+      );
 
     // Revoke all existing unused invites
     await supabase
@@ -1109,7 +1163,10 @@ export class UsersService {
       .is('used_at', null);
 
     const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
     const { error: inviteError } = await supabase.from('user_invites').insert({
@@ -1119,15 +1176,20 @@ export class UsersService {
       expires_at: expiresAt,
     });
 
-    if (inviteError) throw new InternalServerErrorException(inviteError.message);
+    if (inviteError)
+      throw new InternalServerErrorException(inviteError.message);
 
-    const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
+    const appUrl =
+      this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
     const inviteLink = `${appUrl}/set-password?token=${rawToken}`;
 
     try {
       await this.mailService.sendInvite(user.email, inviteLink);
     } catch (emailError) {
-      console.log('[resendInvite] email error:', emailError?.message ?? emailError);
+      console.log(
+        '[resendInvite] email error:',
+        emailError?.message ?? emailError,
+      );
       console.log('==========================================');
       console.log('DEV MODE - invite link (copy and open in browser):');
       console.log(`Invite recipient: ${user.email}`);
@@ -1142,7 +1204,10 @@ export class UsersService {
       id,
     );
 
-    return { message: `Invite resent to ${user.email}.`, invite_expires_at: expiresAt };
+    return {
+      message: `Invite resent to ${user.email}.`,
+      invite_expires_at: expiresAt,
+    };
   }
 
   async reactivate(id: string, companyId: string, adminUserId: string) {
@@ -1184,41 +1249,63 @@ export class UsersService {
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('user_profile')
-      .select('user_id, employee_id, first_name, middle_name, last_name, email, username, department_id, start_date, personal_email, phone_number, date_of_birth, place_of_birth, nationality, civil_status, complete_address, bank_name, bank_account_number, bank_account_name, avatar_url')
+      .select(
+        'user_id, employee_id, first_name, middle_name, last_name, email, username, department_id, start_date, personal_email, phone_number, date_of_birth, place_of_birth, nationality, civil_status, complete_address, bank_name, bank_account_number, bank_account_name, avatar_url',
+      )
       .eq('user_id', userId)
       .maybeSingle();
     if (error || !data) throw new NotFoundException('Profile not found');
     return data;
   }
 
-  async updateMe(userId: string, body: {
-    middle_name?: string;
-    personal_email?: string;
-    date_of_birth?: string;
-    place_of_birth?: string;
-    nationality?: string;
-    civil_status?: string;
-    complete_address?: string;
-    bank_name?: string;
-    bank_account_number?: string;
-    bank_account_name?: string;
-    avatar_url?: string;
-  }) {
-    const allowed = ['middle_name','personal_email','date_of_birth','place_of_birth','nationality','civil_status','complete_address','bank_name','bank_account_number','bank_account_name','avatar_url'];
-    const patch: Record<string,any> = {};
+  async updateMe(
+    userId: string,
+    body: {
+      middle_name?: string;
+      personal_email?: string;
+      date_of_birth?: string;
+      place_of_birth?: string;
+      nationality?: string;
+      civil_status?: string;
+      complete_address?: string;
+      bank_name?: string;
+      bank_account_number?: string;
+      bank_account_name?: string;
+      avatar_url?: string;
+    },
+  ) {
+    const allowed = [
+      'middle_name',
+      'personal_email',
+      'date_of_birth',
+      'place_of_birth',
+      'nationality',
+      'civil_status',
+      'complete_address',
+      'bank_name',
+      'bank_account_number',
+      'bank_account_name',
+      'avatar_url',
+    ];
+    const patch: Record<string, any> = {};
     for (const key of allowed) {
-      if (body[key as keyof typeof body] !== undefined) patch[key] = body[key as keyof typeof body];
+      if (body[key as keyof typeof body] !== undefined)
+        patch[key] = body[key as keyof typeof body];
     }
-    if (Object.keys(patch).length === 0) return { message: 'Nothing to update' };
+    if (Object.keys(patch).length === 0)
+      return { message: 'Nothing to update' };
 
     const supabase = this.supabaseService.getClient();
     const { data, error } = await supabase
       .from('user_profile')
       .update(patch)
       .eq('user_id', userId)
-      .select('user_id, employee_id, first_name, middle_name, last_name, email, username, department_id, start_date, personal_email, phone_number, date_of_birth, place_of_birth, nationality, civil_status, complete_address, bank_name, bank_account_number, bank_account_name, avatar_url')
+      .select(
+        'user_id, employee_id, first_name, middle_name, last_name, email, username, department_id, start_date, personal_email, phone_number, date_of_birth, place_of_birth, nationality, civil_status, complete_address, bank_name, bank_account_number, bank_account_name, avatar_url',
+      )
       .maybeSingle();
-    if (error) throw new InternalServerErrorException('Failed to update profile');
+    if (error)
+      throw new InternalServerErrorException('Failed to update profile');
     return data;
   }
 
@@ -1254,7 +1341,11 @@ export class UsersService {
     return withUrls;
   }
 
-  async uploadEmployeeDocument(userId: string, docType: string, file: Express.Multer.File) {
+  async uploadEmployeeDocument(
+    userId: string,
+    docType: string,
+    file: Express.Multer.File,
+  ) {
     if (!file) throw new BadRequestException('No file uploaded.');
 
     const allowed = [
@@ -1265,7 +1356,9 @@ export class UsersService {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ];
     if (!allowed.includes(file.mimetype)) {
-      throw new BadRequestException('Invalid file type. Allowed: PDF, JPG, PNG, DOC, DOCX.');
+      throw new BadRequestException(
+        'Invalid file type. Allowed: PDF, JPG, PNG, DOC, DOCX.',
+      );
     }
     if (file.size > 5 * 1024 * 1024) {
       throw new BadRequestException('File too large. Maximum 5 MB.');
@@ -1278,7 +1371,8 @@ export class UsersService {
       .from('employee-documents')
       .upload(filePath, file.buffer, { contentType: file.mimetype });
 
-    if (uploadErr) throw new BadRequestException(`Upload failed: ${uploadErr.message}`);
+    if (uploadErr)
+      throw new BadRequestException(`Upload failed: ${uploadErr.message}`);
 
     const { data: urlData } = await supabase.storage
       .from('employee-documents')
@@ -1349,7 +1443,11 @@ export class UsersService {
     return { message: 'Document approved', id: docId };
   }
 
-  async rejectEmployeeDocument(docId: string, reviewerId: string, hrNotes: string) {
+  async rejectEmployeeDocument(
+    docId: string,
+    reviewerId: string,
+    hrNotes: string,
+  ) {
     const supabase = this.supabaseService.getClient();
 
     const { error } = await supabase
@@ -1416,7 +1514,11 @@ export class UsersService {
   // PROFILE CHANGE REQUESTS
   // =========================================================
 
-  async submitChangeRequest(employeeId: string, companyId: string, dto: CreateChangeRequestDto) {
+  async submitChangeRequest(
+    employeeId: string,
+    companyId: string,
+    dto: CreateChangeRequestDto,
+  ) {
     const supabase = this.supabaseService.getClient();
 
     const { data, error } = await supabase
@@ -1436,20 +1538,29 @@ export class UsersService {
     if (error) throw new BadRequestException(error.message);
 
     // Notify HR — fire-and-forget
-    const fieldLabel = dto.field_type === 'legal_name' ? 'Legal Name' : 'Bank Account';
-    this.notificationsService.notifyAllHRInCompany(companyId, {
-      type: 'PROFILE_CHANGE_SUBMITTED',
-      title: 'Profile Change Request',
-      message: `An employee has submitted a ${fieldLabel} change request for review.`,
-      metadata: { request_id: data.request_id, employee_id: employeeId, field_type: dto.field_type },
-    }).catch(() => {});
+    const fieldLabel =
+      dto.field_type === 'legal_name' ? 'Legal Name' : 'Bank Account';
+    this.notificationsService
+      .notifyAllHRInCompany(companyId, {
+        type: 'PROFILE_CHANGE_SUBMITTED',
+        title: 'Profile Change Request',
+        message: `An employee has submitted a ${fieldLabel} change request for review.`,
+        metadata: {
+          request_id: data.request_id,
+          employee_id: employeeId,
+          field_type: dto.field_type,
+        },
+      })
+      .catch(() => {});
 
     // Audit — fire-and-forget
-    this.auditService.log(
-      `PROFILE_CHANGE_REQUEST_SUBMITTED: ${dto.field_type}`,
-      employeeId,
-      companyId,
-    ).catch(() => {});
+    this.auditService
+      .log(
+        `PROFILE_CHANGE_REQUEST_SUBMITTED: ${dto.field_type}`,
+        employeeId,
+        companyId,
+      )
+      .catch(() => {});
 
     return data;
   }
@@ -1470,7 +1581,9 @@ export class UsersService {
     let query = this.supabaseService
       .getClient()
       .from('profile_change_requests')
-      .select('*, employee:employee_id(first_name, last_name, employee_id, email)')
+      .select(
+        '*, employee:employee_id(first_name, last_name, employee_id, email)',
+      )
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
@@ -1498,8 +1611,10 @@ export class UsersService {
       .eq('company_id', companyId)
       .single();
 
-    if (fetchErr || !request) throw new NotFoundException('Change request not found.');
-    if (request.status !== 'pending') throw new BadRequestException('This request has already been reviewed.');
+    if (fetchErr || !request)
+      throw new NotFoundException('Change request not found.');
+    if (request.status !== 'pending')
+      throw new BadRequestException('This request has already been reviewed.');
 
     // Update request status
     const { data: updated, error: updateErr } = await supabase
@@ -1523,55 +1638,79 @@ export class UsersService {
       if (request.field_type === 'legal_name') {
         const nameUpdate: Record<string, string> = {};
         if (changes.first_name) nameUpdate.first_name = changes.first_name;
-        if (changes.middle_name !== undefined) nameUpdate.middle_name = changes.middle_name;
+        if (changes.middle_name !== undefined)
+          nameUpdate.middle_name = changes.middle_name;
         if (changes.last_name) nameUpdate.last_name = changes.last_name;
         if (Object.keys(nameUpdate).length > 0) {
-          await supabase.from('user_profile').update(nameUpdate).eq('user_id', request.employee_id);
+          await supabase
+            .from('user_profile')
+            .update(nameUpdate)
+            .eq('user_id', request.employee_id);
         }
       } else if (request.field_type === 'bank') {
         const bankUpdate: Record<string, string> = {};
         if (changes.bank_name) bankUpdate.bank_name = changes.bank_name;
-        if (changes.bank_account_number) bankUpdate.bank_account_number = changes.bank_account_number;
-        if (changes.bank_account_name) bankUpdate.bank_account_name = changes.bank_account_name;
+        if (changes.bank_account_number)
+          bankUpdate.bank_account_number = changes.bank_account_number;
+        if (changes.bank_account_name)
+          bankUpdate.bank_account_name = changes.bank_account_name;
         if (Object.keys(bankUpdate).length > 0) {
-          await supabase.from('user_profile').update(bankUpdate).eq('user_id', request.employee_id);
+          await supabase
+            .from('user_profile')
+            .update(bankUpdate)
+            .eq('user_id', request.employee_id);
         }
       }
     }
 
-    const employee = (request as any).employee;
-    const fieldLabel = request.field_type === 'legal_name' ? 'Legal Name' : 'Bank Account';
+    const employee = request.employee;
+    const fieldLabel =
+      request.field_type === 'legal_name' ? 'Legal Name' : 'Bank Account';
 
     // Notify employee — fire-and-forget
-    this.notificationsService.createNotification({
-      userId: request.employee_id,
-      companyId,
-      type: 'PROFILE_CHANGE_REVIEWED',
-      title: dto.status === 'approved' ? `${fieldLabel} Change Approved` : `${fieldLabel} Change Rejected`,
-      message: dto.status === 'approved'
-        ? `Your ${fieldLabel} change request has been approved.`
-        : `Your ${fieldLabel} change request was rejected. Reason: ${dto.review_reason}`,
-      metadata: { request_id: requestId, field_type: request.field_type, status: dto.status },
-    }).catch(() => {});
+    this.notificationsService
+      .createNotification({
+        userId: request.employee_id,
+        companyId,
+        type: 'PROFILE_CHANGE_REVIEWED',
+        title:
+          dto.status === 'approved'
+            ? `${fieldLabel} Change Approved`
+            : `${fieldLabel} Change Rejected`,
+        message:
+          dto.status === 'approved'
+            ? `Your ${fieldLabel} change request has been approved.`
+            : `Your ${fieldLabel} change request was rejected. Reason: ${dto.review_reason}`,
+        metadata: {
+          request_id: requestId,
+          field_type: request.field_type,
+          status: dto.status,
+        },
+      })
+      .catch(() => {});
 
     // Send email — fire-and-forget
     if (employee?.email) {
-      this.mailService.sendProfileChangeReviewedEmail({
-        to: employee.email,
-        employeeName: `${employee.first_name} ${employee.last_name}`,
-        fieldType: request.field_type,
-        status: dto.status,
-        reviewReason: dto.review_reason,
-      }).catch(() => {});
+      this.mailService
+        .sendProfileChangeReviewedEmail({
+          to: employee.email,
+          employeeName: `${employee.first_name} ${employee.last_name}`,
+          fieldType: request.field_type,
+          status: dto.status,
+          reviewReason: dto.review_reason,
+        })
+        .catch(() => {});
     }
 
     // Audit — fire-and-forget
-    this.auditService.log(
-      `PROFILE_CHANGE_REQUEST_REVIEWED (${dto.status}): ${request.field_type}`,
-      reviewerId,
-      companyId,
-      request.employee_id,
-    ).catch(() => {});
+    this.auditService
+      .log(
+        `PROFILE_CHANGE_REQUEST_REVIEWED (${dto.status}): ${request.field_type}`,
+        reviewerId,
+        companyId,
+        request.employee_id,
+      )
+      .catch(() => {});
 
     return updated;
   }
