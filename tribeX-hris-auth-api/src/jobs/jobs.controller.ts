@@ -27,6 +27,9 @@ import { GetRankedCandidatesDto } from './dto/get-ranked-candidates.dto';
 import { SaveManualRankingDto } from './dto/save-manual-ranking.dto';
 import { ScheduleInterviewDto } from './dto/schedule-interview.dto';
 import { InterviewResponseDto } from './dto/interview-response.dto';
+import { CreateInterviewEvaluationDto } from './dto/create-interview-evaluation.dto';
+import { CreateOfferLetterDto, UpdateOfferStatusDto } from './dto/offer-letter.dto';
+import { UpdateApplicationRankingStatusDto } from './dto/update-ranking-status.dto';
 
 const HR_AND_ABOVE = ['Admin', 'System Admin', 'HR Officer', 'HR Recruiter', 'HR Interviewer', 'Manager'];
 
@@ -271,5 +274,107 @@ export class JobsController {
     @Req() req: any,
   ) {
     return this.jobsService.applyToJob(id, req.user.sub_userid, req.user.company_id ?? null, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RANKING STATUS
+  // ---------------------------------------------------------------------------
+
+  @Patch('applications/:applicationId/ranking-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Update applicant-facing ranking status (Shortlisted / Not Shortlisted / On Hold)' })
+  updateRankingStatus(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: UpdateApplicationRankingStatusDto,
+    @Req() req: any,
+  ) {
+    return this.jobsService.updateRankingStatus(applicationId, req.user.company_id, dto, req.user.sub_userid);
+  }
+
+  // ---------------------------------------------------------------------------
+  // EXTRACTED CV SKILLS
+  // ---------------------------------------------------------------------------
+
+  @Get('applications/:applicationId/cv-skills')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get Pillar-extracted SFIA skills for an application' })
+  getExtractedCvSkills(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getExtractedCvSkills(applicationId, req.user.company_id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RECRUITMENT TIMELINE
+  // ---------------------------------------------------------------------------
+
+  @Get('applications/:applicationId/timeline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get recruitment timeline / hand-off events for an application' })
+  getRecruitmentTimeline(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getRecruitmentTimeline(applicationId, req.user.company_id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTERVIEW EVALUATIONS
+  // ---------------------------------------------------------------------------
+
+  @Post('applications/:applicationId/evaluations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'HR/Interviewer: Submit an interview evaluation for an application' })
+  saveInterviewEvaluation(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: CreateInterviewEvaluationDto,
+    @Req() req: any,
+  ) {
+    return this.jobsService.saveInterviewEvaluation(applicationId, req.user.company_id, req.user.sub_userid, dto);
+  }
+
+  @Get('applications/:applicationId/evaluations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR Officer: Retrieve all interview evaluations for an application' })
+  getInterviewEvaluations(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getInterviewEvaluations(applicationId, req.user.company_id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // OFFER MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  @Post('applications/:applicationId/offers')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'System Admin', 'HR Officer')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'HR: Draft an offer letter for an application' })
+  createOfferLetter(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: CreateOfferLetterDto,
+    @Req() req: any,
+  ) {
+    return this.jobsService.createOfferLetter(applicationId, req.user.company_id, req.user.sub_userid, dto);
+  }
+
+  @Get('applications/:applicationId/offers')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get all offers for an application' })
+  getOfferLetters(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getOfferLetters(applicationId, req.user.company_id);
+  }
+
+  @Patch('offers/:offerId/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'System Admin', 'HR Officer')
+  @ApiOperation({ summary: 'HR: Update offer letter status (approve, send, revoke, etc.)' })
+  updateOfferStatus(
+    @Param('offerId') offerId: string,
+    @Body() dto: UpdateOfferStatusDto,
+    @Req() req: any,
+  ) {
+    return this.jobsService.updateOfferStatus(offerId, req.user.company_id, req.user.sub_userid, dto);
   }
 }

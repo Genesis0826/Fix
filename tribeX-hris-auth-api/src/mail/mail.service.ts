@@ -496,4 +496,38 @@ export class MailService {
       this.logger.error('Failed to send profile change reviewed email', error);
     }
   }
+
+  async sendSfiaDisabledAlert(opts: {
+    to: string;
+    companyId: string;
+    failureCount: number;
+  }): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.MAIL_FROM ?? 'noreply@bluesclues.app',
+        to: opts.to,
+        subject: '⚠️ SFIA Ranking Auto-Disabled – Action Required',
+        html: `
+          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+            <div style="background:#dc2626;padding:20px 24px;">
+              <h2 style="color:#fff;margin:0;">⚠️ SFIA Ranking Auto-Disabled</h2>
+            </div>
+            <div style="padding:24px;">
+              <p>The SFIA automatic ranking feature has been <strong>auto-disabled</strong> for company <code>${opts.companyId}</code> after <strong>${opts.failureCount}</strong> consecutive Pillar service failures.</p>
+              <p>All job ranking has been switched to <strong>manual mode</strong>. Recruiters will need to rank candidates manually until the issue is resolved.</p>
+              <p><strong>Next steps:</strong></p>
+              <ol>
+                <li>Verify that the Pillar API service is operational.</li>
+                <li>Re-enable SFIA ranking from the Admin → SFIA Settings panel.</li>
+              </ol>
+              <p style="margin-top:24px;color:#6b7280;font-size:12px;">This alert was generated automatically by the Blues Clues HRIS health-check service.</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send SFIA disabled alert email', error);
+      throw error;
+    }
+  }
 }
