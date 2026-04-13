@@ -657,6 +657,27 @@ export class OnboardingService {
   async approveSession(sessionId: string, hrUserId?: string) {
     const supabase = this.supabaseService.getClient();
 
+    // ── 100% completion gate ───────────────────────────────────────────────
+    // Fetch all required onboarding items and verify all are completed before approval.
+    const { data: items } = await supabase
+      .from('onboarding_items')
+      .select('status, template_items!inner(is_required, tab_category)')
+      .eq('session_id', sessionId);
+
+    if (items && items.length > 0) {
+      const trackable = (items as any[]).filter((i) => i.template_items.tab_category !== 'welcome');
+      const required = trackable.filter((i) => i.template_items.is_required);
+      const incomplete = required.filter(
+        (i) => !['approved', 'confirmed', 'issued'].includes(i.status),
+      );
+      if (incomplete.length > 0) {
+        throw new BadRequestException(
+          `Cannot approve onboarding session: ${incomplete.length} required item(s) are not yet completed. All required items must be approved or confirmed before the session can be approved.`,
+        );
+      }
+    }
+    // ── end 100% gate ──────────────────────────────────────────────────────
+
     // Mark session approved
     await supabase
       .from('onboarding_sessions')
@@ -862,7 +883,70 @@ export class OnboardingService {
       this.logger.error(`[approveSession] Failed to sync profile/docs: ${(syncErr as any)?.message}`);
     }
 
+    // ── Compensation & Benefits Handoff ───────────────────────────────────
+    // Notify all HR Officers about the new employee ready for C&B setup.
+    if (ctx) {
+      this.triggerCompBenefitsHandoff(ctx, resolvedUserId, sessionId).catch(() => {});
+    }
+    // ── end C&B handoff ───────────────────────────────────────────────────
+
     return { message: 'Onboarding approved', session_id: sessionId, status: 'approved' };
+  }
+
+  private async triggerCompBenefitsHandoff(
+    ctx: { accountId: string; companyId: string; employeeName: string; employeeEmail: string },
+    resolvedUserId: string | undefined,
+    sessionId: string,
+  ): Promise<void> {
+    const supabase = this.supabaseService.getClient();
+
+    // Fetch employee ID for display
+    const employeeId = resolvedUserId
+      ? (await supabase.from('user_profile').select('employee_id').eq('user_id', resolvedUserId).maybeSingle()).data?.employee_id ?? 'N/A'
+      : 'N/A';
+
+    const { data: company } = await supabase
+      .from('companies')
+      .select('company_name')
+      .eq('company_id', ctx.companyId)
+      .maybeSingle();
+
+    // Find HR Officers to notify
+    const { data: hrOfficers } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, email, role:role_id(role_name)')
+      .eq('company_id', ctx.companyId);
+
+    const HR_OFFICER_ROLES = ['HR Officer', 'Admin', 'System Admin'];
+    const targets = (hrOfficers ?? []).filter((u: any) =>
+      HR_OFFICER_ROLES.includes(u.role?.role_name),
+    );
+
+    const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
+
+    for (const officer of targets) {
+      // In-app notification
+      this.notificationsService.createNotification({
+        userId: officer.user_id,
+        companyId: ctx.companyId,
+        type: 'COMP_BENEFITS_HANDOFF',
+        title: 'New Employee Onboarding Complete',
+        message: `${ctx.employeeName} (${employeeId}) has completed onboarding. Please proceed with Compensation & Benefits setup.`,
+        metadata: { session_id: sessionId, employee_id: employeeId, employee_name: ctx.employeeName },
+      }).catch(() => {});
+
+      // Email notification
+      if (officer.email) {
+        this.mailService.sendCompBenefitsHandoffEmail({
+          to: officer.email,
+          hrOfficerName: `${officer.first_name ?? ''} ${officer.last_name ?? ''}`.trim() || 'HR Officer',
+          employeeName: ctx.employeeName,
+          employeeId,
+          companyName: company?.company_name ?? 'your company',
+          portalUrl: `${appUrl}/hr/employees`,
+        }).catch(() => {});
+      }
+    }
   }
 
   // =========================================================
@@ -1684,5 +1768,136 @@ export class OnboardingService {
 
     this.logger.log(`Applicant onboarding session created: ${sessionId} for applicant ${params.applicantId}`);
     return { session_id: sessionId };
+  }
+
+  // =========================================================
+  // ADMIN: ONBOARDING OFFICER MANAGEMENT
+  // =========================================================
+
+  async getOnboardingOfficers(companyId: string) {
+    const supabase = this.supabaseService.getClient();
+    const { data, error } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, email, username, account_status, created_at, role:role_id(role_name)')
+      .eq('company_id', companyId);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    const ONBOARDING_ROLES = ['HR Officer', 'HR Onboarding Officer'];
+    return (data ?? []).filter((u: any) => ONBOARDING_ROLES.includes(u.role?.role_name));
+  }
+
+  async getOnboardingOfficerActivity(companyId: string, officerId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    // Verify the officer belongs to this company
+    const { data: officer } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, email, account_status')
+      .eq('user_id', officerId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!officer) throw new NotFoundException('Onboarding officer not found');
+
+    // Get audit logs performed by this officer
+    const { data: auditLogs } = await supabase
+      .from('audit_log')
+      .select('log_id, action, performed_at, target_user_id')
+      .eq('performed_by', officerId)
+      .eq('company_id', companyId)
+      .order('performed_at', { ascending: false })
+      .limit(50);
+
+    // Get sessions they have approved
+    const { data: approvedSessions } = await supabase
+      .from('onboarding_sessions')
+      .select('session_id, status, completed_at, account_id')
+      .eq('company_id', companyId)
+      .eq('status', 'approved')
+      .order('completed_at', { ascending: false })
+      .limit(20);
+
+    return {
+      officer,
+      audit_logs: auditLogs ?? [],
+      approved_sessions: approvedSessions ?? [],
+    };
+  }
+
+  async revokeOnboardingOfficerAccess(companyId: string, officerId: string, revokedBy: string) {
+    const supabase = this.supabaseService.getClient();
+
+    // Verify the officer belongs to this company
+    const { data: officer } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, account_status, role:role_id(role_name)')
+      .eq('user_id', officerId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!officer) throw new NotFoundException('Onboarding officer not found');
+
+    const ONBOARDING_ROLES = ['HR Officer', 'HR Onboarding Officer'];
+    if (!ONBOARDING_ROLES.includes((officer as any).role?.role_name)) {
+      throw new BadRequestException('The specified user does not have an onboarding officer role');
+    }
+
+    if ((officer as any).account_status === 'Inactive') {
+      throw new BadRequestException('This account is already inactive');
+    }
+
+    const { error } = await supabase
+      .from('user_profile')
+      .update({ account_status: 'Inactive' })
+      .eq('user_id', officerId)
+      .eq('company_id', companyId);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    await this.auditService.log(
+      `ONBOARDING_OFFICER_ACCESS_REVOKED: user_id=${officerId} (${(officer as any).first_name} ${(officer as any).last_name})`,
+      revokedBy,
+      companyId,
+      officerId,
+    );
+
+    return {
+      message: 'Onboarding officer access revoked successfully',
+      officer_id: officerId,
+    };
+  }
+
+  async restoreOnboardingOfficerAccess(companyId: string, officerId: string, restoredBy: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: officer } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, account_status')
+      .eq('user_id', officerId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!officer) throw new NotFoundException('Onboarding officer not found');
+
+    const { error } = await supabase
+      .from('user_profile')
+      .update({ account_status: 'Active' })
+      .eq('user_id', officerId)
+      .eq('company_id', companyId);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    await this.auditService.log(
+      `ONBOARDING_OFFICER_ACCESS_RESTORED: user_id=${officerId} (${(officer as any).first_name} ${(officer as any).last_name})`,
+      restoredBy,
+      companyId,
+      officerId,
+    );
+
+    return {
+      message: 'Onboarding officer access restored successfully',
+      officer_id: officerId,
+    };
   }
 }

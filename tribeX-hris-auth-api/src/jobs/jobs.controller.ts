@@ -111,7 +111,7 @@ export class JobsController {
     @Body() body: { status: string },
     @Req() req: any,
   ) {
-    return this.jobsService.updateApplicationStatus(applicationId, body.status, req.user.company_id);
+    return this.jobsService.updateApplicationStatus(applicationId, body.status, req.user.company_id, req.user.sub_userid);
   }
 
   @Post('applications/:applicationId/interview-schedule')
@@ -271,5 +271,123 @@ export class JobsController {
     @Req() req: any,
   ) {
     return this.jobsService.applyToJob(id, req.user.sub_userid, req.user.company_id ?? null, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RECRUITMENT TIMELINE
+  // ---------------------------------------------------------------------------
+
+  @Get('applications/:applicationId/timeline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get recruitment timeline/handoff events for an application' })
+  getRecruitmentTimeline(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getRecruitmentTimeline(applicationId, req.user.company_id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTERVIEW EVALUATIONS
+  // ---------------------------------------------------------------------------
+
+  @Post('applications/:applicationId/evaluations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'HR Interviewer: Save interview evaluation for an application' })
+  saveInterviewEvaluation(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: {
+      stage: string;
+      interviewer_name?: string;
+      technical_score?: number;
+      communication_score?: number;
+      culture_fit_score?: number;
+      overall_score?: number;
+      strengths?: string;
+      weaknesses?: string;
+      notes?: string;
+      recommendation?: string;
+    },
+    @Req() req: any,
+  ) {
+    return this.jobsService.saveInterviewEvaluation(applicationId, req.user.company_id, req.user.sub_userid, dto);
+  }
+
+  @Get('applications/:applicationId/evaluations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get all interview evaluations for an application' })
+  getInterviewEvaluations(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getInterviewEvaluations(applicationId, req.user.company_id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // OFFER MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  @Post('applications/:applicationId/offer')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('HR Officer', 'Admin', 'System Admin')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'HR Officer: Create a job offer for an application' })
+  createOffer(
+    @Param('applicationId') applicationId: string,
+    @Body() dto: {
+      job_title: string;
+      department?: string;
+      start_date?: string;
+      employment_type?: string;
+      base_salary?: number;
+      salary_currency?: string;
+      salary_frequency?: string;
+      benefits?: Record<string, unknown>;
+      allowances?: Record<string, unknown>;
+      signing_bonus?: number;
+      notes?: string;
+      expires_at?: string;
+    },
+    @Req() req: any,
+  ) {
+    return this.jobsService.createOffer(applicationId, req.user.company_id, req.user.sub_userid, dto);
+  }
+
+  @Get('applications/:applicationId/offer')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...HR_AND_ABOVE)
+  @ApiOperation({ summary: 'HR: Get the current offer for an application' })
+  getOffer(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getOffer(applicationId, req.user.company_id);
+  }
+
+  @Post('applications/:applicationId/offer/:offerId/send')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('HR Officer', 'Admin', 'System Admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'HR Officer: Send the job offer to the applicant' })
+  sendOffer(
+    @Param('applicationId') _applicationId: string,
+    @Param('offerId') offerId: string,
+    @Req() req: any,
+  ) {
+    return this.jobsService.sendOffer(offerId, req.user.company_id, req.user.sub_userid);
+  }
+
+  @Get('applicant/my-applications/:applicationId/offer')
+  @UseGuards(ApplicantJwtAuthGuard)
+  @ApiOperation({ summary: 'Applicant: View own offer for an application' })
+  getOfferForApplicant(@Param('applicationId') applicationId: string, @Req() req: any) {
+    return this.jobsService.getOfferForApplicant(applicationId, req.user.sub_userid);
+  }
+
+  @Post('applicant/offers/:offerId/respond')
+  @UseGuards(ApplicantJwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Applicant: Accept or decline a job offer' })
+  respondToOffer(
+    @Param('offerId') offerId: string,
+    @Body() body: { accepted: boolean },
+    @Req() req: any,
+  ) {
+    return this.jobsService.respondToOffer(offerId, req.user.sub_userid, body.accepted);
   }
 }

@@ -399,6 +399,18 @@ export class ApplicantsService {
 
     if (updateError) throw new InternalServerErrorException('Failed to save resume metadata.');
 
+    // Reset CV parsing status to 'pending' so the next application submission triggers a fresh parse
+    // Fire-and-forget: parsing is triggered at application submission time
+    supabase
+      .from('applicant_profile')
+      .update({
+        cv_parsing_status: 'pending',
+        cv_parsing_error_message: null,
+        resume_parsed_at: null,
+      })
+      .eq('applicant_id', applicantId)
+      .then(() => {}, () => {});
+
     // Generate a signed URL to return immediately to the caller
     const { data: urlData } = await supabase.storage
       .from('applicant-resumes')
@@ -415,7 +427,14 @@ export class ApplicantsService {
     const supabase = this.supabaseService.getClient();
     const { error } = await supabase
       .from('applicant_profile')
-      .update({ resume_url: null, resume_name: null, resume_uploaded_at: null })
+      .update({
+        resume_url: null,
+        resume_name: null,
+        resume_uploaded_at: null,
+        cv_parsing_status: 'pending',
+        cv_parsing_error_message: null,
+        resume_parsed_at: null,
+      })
       .eq('applicant_id', applicantId);
     if (error) throw new InternalServerErrorException('Failed to delete resume.');
     return { message: 'Resume deleted' };

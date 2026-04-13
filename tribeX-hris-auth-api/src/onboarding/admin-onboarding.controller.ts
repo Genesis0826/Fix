@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -74,5 +74,35 @@ export class AdminOnboardingController {
     @Body() body: { title?: string; description?: string; is_required?: boolean },
   ) {
     return this.onboardingService.updateTemplateItem(itemId, body);
+  }
+
+  // ── Onboarding Officer Admin/Audit/Revoke ───────────────────────────────
+
+  @Get('officers')
+  @Roles('System Admin')
+  @ApiOperation({ summary: 'System Admin: List all HR onboarding officers for the company' })
+  getOnboardingOfficers(@Req() req: any) {
+    return this.onboardingService.getOnboardingOfficers(req.user.company_id);
+  }
+
+  @Get('officers/:officerId/activity')
+  @Roles('System Admin')
+  @ApiOperation({ summary: 'System Admin: Audit activity logs for an onboarding officer' })
+  getOnboardingOfficerActivity(@Param('officerId') officerId: string, @Req() req: any) {
+    return this.onboardingService.getOnboardingOfficerActivity(req.user.company_id, officerId);
+  }
+
+  @Delete('officers/:officerId/access')
+  @Roles('System Admin')
+  @ApiOperation({ summary: 'System Admin: Revoke access for an onboarding officer' })
+  revokeOnboardingOfficerAccess(@Param('officerId') officerId: string, @Req() req: any) {
+    return this.onboardingService.revokeOnboardingOfficerAccess(req.user.company_id, officerId, req.user.sub_userid);
+  }
+
+  @Post('officers/:officerId/access/restore')
+  @Roles('System Admin')
+  @ApiOperation({ summary: 'System Admin: Restore access for a revoked onboarding officer' })
+  restoreOnboardingOfficerAccess(@Param('officerId') officerId: string, @Req() req: any) {
+    return this.onboardingService.restoreOnboardingOfficerAccess(req.user.company_id, officerId, req.user.sub_userid);
   }
 }

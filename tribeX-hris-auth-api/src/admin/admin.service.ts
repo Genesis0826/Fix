@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService } from '../audit/audit.service';
+import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateSfiaSettingsDto } from './dto/sfia-settings.dto';
 
 type SfiaSettings = {
@@ -18,6 +20,8 @@ export class AdminService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly auditService: AuditService,
+    private readonly mailService: MailService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async getSfiaSettings(companyId: string): Promise<SfiaSettings> {
@@ -113,6 +117,19 @@ export class AdminService {
         companyId,
       );
 
+      // Record health check entry
+      try {
+        await supabase.from('sfia_health_checks').insert({
+          company_id: companyId,
+          pillar_status: 'unhealthy',
+          failure_count: newFailureCount,
+          sfia_action: 'auto_disabled',
+        });
+      } catch { /* non-fatal */ }
+
+      // Notify all HR Recruiters in the company via in-app and email
+      await this.notifyHrRecruitersOfSfiaFallback(companyId, `SFIA auto-disabled after ${newFailureCount} consecutive Pillar API failures. Please rank candidates manually.`);
+
       return { auto_disabled: true, failure_count: newFailureCount };
     }
 
@@ -121,15 +138,80 @@ export class AdminService {
       .update({ consecutive_failures: newFailureCount })
       .eq('company_id', companyId);
 
+    // Record health check entry
+    try {
+      await supabase.from('sfia_health_checks').insert({
+        company_id: companyId,
+        pillar_status: 'unhealthy',
+        failure_count: newFailureCount,
+        sfia_action: 'no_action',
+      });
+    } catch { /* non-fatal */ }
+
     return { auto_disabled: false, failure_count: newFailureCount };
   }
 
   async resetSfiaFailureCounter(companyId: string, adminUserId: string) {
-    return this.updateSfiaSettings(
+    const result = await this.updateSfiaSettings(
       companyId,
       { consecutive_failures: 0 },
       adminUserId,
     );
+
+    // Record health check recovery
+    try {
+      await this.supabaseService.getClient().from('sfia_health_checks').insert({
+        company_id: companyId,
+        pillar_status: 'healthy',
+        failure_count: 0,
+        sfia_action: 'auto_enabled',
+      });
+    } catch { /* non-fatal */ }
+
+    return result;
+  }
+
+  private async notifyHrRecruitersOfSfiaFallback(companyId: string, reason: string, jobTitle?: string): Promise<void> {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: company } = await supabase
+      .from('companies')
+      .select('company_name')
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const { data: hrUsers } = await supabase
+      .from('user_profile')
+      .select('user_id, first_name, last_name, email, role:role_id(role_name)')
+      .eq('company_id', companyId);
+
+    const HR_RECRUITER_ROLES = ['HR Recruiter', 'Admin', 'System Admin'];
+    const recruiters = (hrUsers ?? []).filter((u: any) =>
+      HR_RECRUITER_ROLES.includes(u.role?.role_name),
+    );
+
+    for (const recruiter of recruiters) {
+      // In-app notification
+      this.notificationsService.createNotification({
+        userId: recruiter.user_id,
+        companyId,
+        type: 'SFIA_FALLBACK',
+        title: '⚠️ SFIA Ranking Fallback Activated',
+        message: reason,
+        metadata: { job_title: jobTitle },
+      }).catch(() => {});
+
+      // Email notification
+      if (recruiter.email) {
+        this.mailService.sendSfiaFallbackNotificationEmail({
+          to: recruiter.email,
+          recruiterName: `${recruiter.first_name ?? ''} ${recruiter.last_name ?? ''}`.trim() || 'HR Recruiter',
+          companyName: company?.company_name ?? 'your company',
+          reason,
+          jobTitle,
+        }).catch(() => {});
+      }
+    }
   }
 
   private getDefaultSfiaSettings(): SfiaSettings {

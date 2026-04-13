@@ -11,6 +11,8 @@ import * as crypto from 'node:crypto';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PillarService } from '../pillar/pillar.service';
 import { CreateJobPostingDto } from './dto/create-job-posting.dto';
 import { UpdateJobPostingDto } from './dto/update-job-posting.dto';
 import { CreateApplicationDto } from './dto/create-application.dto';
@@ -107,6 +109,8 @@ export class JobsService {
     private readonly supabaseService: SupabaseService,
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
+    private readonly notificationsService: NotificationsService,
+    private readonly pillarService: PillarService,
     private readonly onboardingService: OnboardingService,
     private readonly adminService: AdminService,
   ) {}
@@ -536,6 +540,8 @@ export class JobsService {
       previous_rank: previousRankMap.get(item.application_id) ?? null,
       new_rank: item.rank,
       changed_at: new Date().toISOString(),
+      reason: 'manual_override',
+      triggered_by: performedBy,
     }));
 
     const { error: historyError } = await supabase
@@ -622,26 +628,97 @@ export class JobsService {
   }
 
   // NOSONAR: Complex method needed for application status workflow - requires refactoring in future sprint
-  async updateApplicationStatus(applicationId: string, status: string, companyId: string) {
+  async updateApplicationStatus(applicationId: string, status: string, companyId: string, performedBy?: string) {
     const supabase = this.supabaseService.getClient();
 
     const { data: app, error: appError } = await supabase
       .from('job_applications')
-      .select('application_id, job_posting_id, applicant_id')
+      .select('application_id, job_posting_id, applicant_id, status')
       .eq('application_id', applicationId)
       .maybeSingle();
 
     if (appError) throw new InternalServerErrorException(appError.message);
 
     if (app) {
-      await this.findOnePosting(app.job_posting_id, companyId);
+      const posting = await this.findOnePosting(app.job_posting_id, companyId);
       await this.validateAndUpdateRegularApplication(app, status, companyId, applicationId, supabase);
+
+      // Log recruitment timeline event
+      this.logRecruitmentTimeline(applicationId, companyId, status, app.status, status, performedBy).catch(() => {});
+
+      // Notify applicant of status change (shortlisted, on_hold, rejected)
+      if (['shortlisted', 'on_hold', 'rejected'].includes(status)) {
+        this.notifyApplicantOfStatusChange(app.applicant_id, applicationId, status, posting.title, companyId).catch(() => {});
+      }
+
       return { message: 'Application status updated' };
     }
 
     // Fall back to SFIA applications table
-    await this.validateAndUpdateSfiaApplication(applicationId, status, companyId, supabase);
+    const sfiaApp = await this.validateAndUpdateSfiaApplication(applicationId, status, companyId, supabase);
+
+    // Log recruitment timeline event for SFIA application
+    if (sfiaApp) {
+      const posting = await this.findOnePosting(sfiaApp.job_posting_id, companyId).catch(() => null);
+      this.logRecruitmentTimeline(applicationId, companyId, status, sfiaApp.status, status, performedBy).catch(() => {});
+
+      if (['shortlisted', 'on_hold', 'rejected'].includes(status) && sfiaApp.applicant_id && posting) {
+        this.notifyApplicantOfStatusChange(sfiaApp.applicant_id, applicationId, status, posting.title, companyId).catch(() => {});
+      }
+    }
+
     return { message: 'Application status updated' };
+  }
+
+  private async notifyApplicantOfStatusChange(
+    applicantId: string,
+    applicationId: string,
+    status: string,
+    jobTitle: string,
+    companyId: string,
+  ): Promise<void> {
+    const supabase = this.supabaseService.getClient();
+    const { data: ap } = await supabase
+      .from('applicant_profile')
+      .select('email, first_name, last_name')
+      .eq('applicant_id', applicantId)
+      .maybeSingle();
+
+    if (!ap) return;
+
+    const applicantName = `${ap.first_name ?? ''} ${ap.last_name ?? ''}`.trim() || 'Applicant';
+    const statusMap: Record<string, string> = {
+      shortlisted: 'Shortlisted',
+      on_hold: 'On Hold',
+      rejected: 'Not Selected',
+    };
+
+    const notificationMessages: Record<string, string> = {
+      shortlisted: `Congratulations! You have been shortlisted for ${jobTitle}.`,
+      on_hold: `Your application for ${jobTitle} has been placed on hold.`,
+      rejected: `Your application for ${jobTitle} has been reviewed and we have decided to proceed with other candidates.`,
+    };
+
+    // In-app notification (note: applicant_profile doesn't map to user_profile,
+    // so we store notifications keyed by applicant_id in a best-effort manner)
+    this.notificationsService.createNotification({
+      userId: applicantId,
+      companyId,
+      type: `APPLICATION_${status.toUpperCase()}`,
+      title: `Application Update: ${statusMap[status] ?? status}`,
+      message: notificationMessages[status] ?? `Your application status was updated to ${status}.`,
+      metadata: { application_id: applicationId, job_title: jobTitle },
+    }).catch(() => {});
+
+    // Email notification
+    if (ap.email && ['shortlisted', 'on_hold', 'rejected'].includes(status)) {
+      this.mailService.sendApplicationStatusEmail({
+        to: ap.email,
+        applicantName,
+        jobTitle,
+        status: status as 'shortlisted' | 'on_hold' | 'rejected',
+      }).catch(() => {});
+    }
   }
 
   private async validateAndUpdateRegularApplication(
@@ -723,10 +800,10 @@ export class JobsService {
     status: string,
     companyId: string,
     supabase: any,
-  ) {
+  ): Promise<any> {
     const { data: sfiaApp, error: sfiaAppError } = await supabase
       .from('job_application_sfia')
-      .select('application_id, job_posting_id, applicant_id')
+      .select('application_id, job_posting_id, applicant_id, status')
       .eq('application_id', applicationId)
       .maybeSingle();
 
@@ -746,6 +823,8 @@ export class JobsService {
     if (status === 'hired' && sfiaApp.applicant_id) {
       await this.handleSfiaHiredApplicationOnboarding(sfiaApp, companyId);
     }
+
+    return sfiaApp;
   }
 
   private async handleSfiaHiredApplicationOnboarding(sfiaApp: any, companyId: string) {
@@ -769,6 +848,420 @@ export class JobsService {
     } catch (err) {
       this.logger.error(`[updateApplicationStatus] Failed to create onboarding for SFIA hire: ${(err as Error).message}`);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recruitment timeline logging
+  // ---------------------------------------------------------------------------
+
+  private async logRecruitmentTimeline(
+    applicationId: string,
+    companyId: string,
+    eventType: string,
+    fromStage: string | null,
+    toStage: string | null,
+    performedBy?: string,
+    performedByRole?: string,
+    notes?: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    const supabase = this.supabaseService.getClient();
+    await supabase.from('recruitment_timeline').insert({
+      event_id: crypto.randomUUID(),
+      application_id: applicationId,
+      company_id: companyId,
+      event_type: eventType,
+      from_stage: fromStage ?? null,
+      to_stage: toStage ?? null,
+      performed_by: performedBy ?? null,
+      performed_by_role: performedByRole ?? null,
+      notes: notes ?? null,
+      metadata: metadata ?? null,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  async getRecruitmentTimeline(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    // Verify application belongs to this company
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (app) {
+      await this.findOnePosting(app.job_posting_id, companyId);
+    }
+
+    const { data, error } = await supabase
+      .from('recruitment_timeline')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ?? [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Interview evaluations
+  // ---------------------------------------------------------------------------
+
+  async saveInterviewEvaluation(
+    applicationId: string,
+    companyId: string,
+    performedBy: string,
+    dto: {
+      stage: string;
+      interviewer_name?: string;
+      technical_score?: number;
+      communication_score?: number;
+      culture_fit_score?: number;
+      overall_score?: number;
+      strengths?: string;
+      weaknesses?: string;
+      notes?: string;
+      recommendation?: string;
+    },
+  ) {
+    const supabase = this.supabaseService.getClient();
+
+    // Verify application belongs to this company
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (!app) throw new NotFoundException('Application not found');
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const evaluation_id = crypto.randomUUID();
+    const { data, error } = await supabase
+      .from('interview_evaluations')
+      .insert({
+        evaluation_id,
+        application_id: applicationId,
+        company_id: companyId,
+        stage: dto.stage,
+        interviewer_id: performedBy,
+        interviewer_name: dto.interviewer_name ?? null,
+        technical_score: dto.technical_score ?? null,
+        communication_score: dto.communication_score ?? null,
+        culture_fit_score: dto.culture_fit_score ?? null,
+        overall_score: dto.overall_score ?? null,
+        strengths: dto.strengths ?? null,
+        weaknesses: dto.weaknesses ?? null,
+        notes: dto.notes ?? null,
+        recommendation: dto.recommendation ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    // Log timeline event
+    this.logRecruitmentTimeline(
+      applicationId,
+      companyId,
+      `${dto.stage}_evaluated`,
+      dto.stage,
+      dto.recommendation ?? null,
+      performedBy,
+      'HR Interviewer',
+      dto.notes,
+      { evaluation_id },
+    ).catch(() => {});
+
+    await this.auditService.log(
+      `Interview evaluation saved for application ${applicationId}, stage: ${dto.stage}`,
+      performedBy,
+      companyId,
+    );
+
+    return data;
+  }
+
+  async getInterviewEvaluations(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (!app) throw new NotFoundException('Application not found');
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const { data, error } = await supabase
+      .from('interview_evaluations')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ?? [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offer management
+  // ---------------------------------------------------------------------------
+
+  async createOffer(
+    applicationId: string,
+    companyId: string,
+    createdBy: string,
+    dto: {
+      job_title: string;
+      department?: string;
+      start_date?: string;
+      employment_type?: string;
+      base_salary?: number;
+      salary_currency?: string;
+      salary_frequency?: string;
+      benefits?: Record<string, unknown>;
+      allowances?: Record<string, unknown>;
+      signing_bonus?: number;
+      notes?: string;
+      expires_at?: string;
+    },
+  ) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id, applicant_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (!app) throw new NotFoundException('Application not found');
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const offer_id = crypto.randomUUID();
+    const { data, error } = await supabase
+      .from('offer_letters')
+      .insert({
+        offer_id,
+        application_id: applicationId,
+        company_id: companyId,
+        applicant_id: app.applicant_id,
+        job_title: dto.job_title,
+        department: dto.department ?? null,
+        start_date: dto.start_date ?? null,
+        employment_type: dto.employment_type ?? null,
+        base_salary: dto.base_salary ?? null,
+        salary_currency: dto.salary_currency ?? 'PHP',
+        salary_frequency: dto.salary_frequency ?? 'monthly',
+        benefits: dto.benefits ?? null,
+        allowances: dto.allowances ?? null,
+        signing_bonus: dto.signing_bonus ?? null,
+        notes: dto.notes ?? null,
+        expires_at: dto.expires_at ?? null,
+        status: 'draft',
+        created_by: createdBy,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    await this.auditService.log(
+      `Offer created for application ${applicationId}: ${dto.job_title}`,
+      createdBy,
+      companyId,
+    );
+
+    return data;
+  }
+
+  async getOffer(applicationId: string, companyId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, job_posting_id')
+      .eq('application_id', applicationId)
+      .maybeSingle();
+
+    if (!app) throw new NotFoundException('Application not found');
+    await this.findOnePosting(app.job_posting_id, companyId);
+
+    const { data, error } = await supabase
+      .from('offer_letters')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    if (!data) throw new NotFoundException('No offer found for this application');
+    return data;
+  }
+
+  async getOfferForApplicant(applicationId: string, applicantId: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: app } = await supabase
+      .from('job_applications')
+      .select('application_id, applicant_id')
+      .eq('application_id', applicationId)
+      .eq('applicant_id', applicantId)
+      .maybeSingle();
+
+    if (!app) throw new NotFoundException('Application not found');
+
+    const { data, error } = await supabase
+      .from('offer_letters')
+      .select('*')
+      .eq('application_id', applicationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    if (!data) throw new NotFoundException('No offer found for this application');
+    return data;
+  }
+
+  async sendOffer(offerId: string, companyId: string, performedBy: string) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: offer } = await supabase
+      .from('offer_letters')
+      .select('*, job_applications(job_posting_id, applicant_id)')
+      .eq('offer_id', offerId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.status !== 'draft') throw new BadRequestException('Only draft offers can be sent');
+
+    const { data: company } = await supabase
+      .from('companies')
+      .select('company_name')
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const { data: ap } = await supabase
+      .from('applicant_profile')
+      .select('email, first_name, last_name')
+      .eq('applicant_id', offer.applicant_id)
+      .maybeSingle();
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('offer_letters')
+      .update({ status: 'sent', sent_at: now, updated_at: now })
+      .eq('offer_id', offerId);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    // Update application status to 'offer_sent'
+    await supabase
+      .from('job_applications')
+      .update({ status: 'offer_sent' })
+      .eq('application_id', offer.application_id);
+
+    // Log timeline event
+    this.logRecruitmentTimeline(
+      offer.application_id,
+      companyId,
+      'offer_sent',
+      null,
+      'offer_sent',
+      performedBy,
+      'HR Officer',
+    ).catch(() => {});
+
+    // Send email to applicant
+    if (ap?.email) {
+      const appUrl = 'http://localhost:3001';
+      this.mailService.sendOfferLetterEmail({
+        to: ap.email,
+        applicantName: `${ap.first_name ?? ''} ${ap.last_name ?? ''}`.trim() || 'Applicant',
+        jobTitle: offer.job_title,
+        companyName: company?.company_name ?? 'the company',
+        startDate: offer.start_date,
+        baseSalary: offer.base_salary,
+        salaryCurrency: offer.salary_currency,
+        salaryFrequency: offer.salary_frequency,
+        expiresAt: offer.expires_at,
+        portalUrl: `${appUrl}/applicant/applications/${offer.application_id}/offer`,
+      }).catch(() => {});
+
+      // In-app notification for applicant
+      this.notificationsService.createNotification({
+        userId: offer.applicant_id,
+        companyId,
+        type: 'OFFER_RECEIVED',
+        title: `Job Offer: ${offer.job_title}`,
+        message: `You have received a job offer for ${offer.job_title}. Please log in to review and respond.`,
+        metadata: { offer_id: offerId, application_id: offer.application_id },
+      }).catch(() => {});
+    }
+
+    await this.auditService.log(
+      `Offer sent for application ${offer.application_id}`,
+      performedBy,
+      companyId,
+    );
+
+    return { message: 'Offer sent successfully', offer_id: offerId };
+  }
+
+  async respondToOffer(offerId: string, applicantId: string, accepted: boolean) {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: offer } = await supabase
+      .from('offer_letters')
+      .select('*')
+      .eq('offer_id', offerId)
+      .eq('applicant_id', applicantId)
+      .maybeSingle();
+
+    if (!offer) throw new NotFoundException('Offer not found');
+    if (offer.status !== 'sent') throw new BadRequestException('Only sent offers can be responded to');
+
+    const newStatus = accepted ? 'accepted' : 'declined';
+    const now = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('offer_letters')
+      .update({ status: newStatus, responded_at: now, updated_at: now })
+      .eq('offer_id', offerId);
+
+    if (error) throw new InternalServerErrorException(error.message);
+
+    // If accepted, mark application as hired
+    if (accepted) {
+      await this.updateApplicationStatus(offer.application_id, 'hired', offer.company_id, applicantId);
+    } else {
+      await supabase
+        .from('job_applications')
+        .update({ status: 'offer_declined' })
+        .eq('application_id', offer.application_id);
+    }
+
+    // Log timeline event
+    this.logRecruitmentTimeline(
+      offer.application_id,
+      offer.company_id,
+      accepted ? 'offer_accepted' : 'offer_declined',
+      'offer_sent',
+      newStatus,
+      applicantId,
+      'Applicant',
+    ).catch(() => {});
+
+    return { message: `Offer ${newStatus}`, offer_id: offerId };
   }
 
   async scheduleInterview(applicationId: string, dto: ScheduleInterviewDto, companyId: string) {
@@ -879,6 +1372,19 @@ export class JobsService {
       'system',
       companyId,
     );
+
+    // Log recruitment timeline event for interview scheduling
+    this.logRecruitmentTimeline(
+      applicationId,
+      companyId,
+      `${stage}_scheduled`,
+      null,
+      stage,
+      undefined,
+      'HR Recruiter',
+      dto.notes ?? undefined,
+      { schedule_id: scheduleId, is_reschedule: isReschedule },
+    ).catch(() => {});
 
     return { message: 'Interview scheduled and email sent', schedule_id: scheduleId };
   }
@@ -1295,7 +1801,7 @@ export class JobsService {
 
     const { data: job } = await supabase
       .from('job_postings')
-      .select('job_posting_id, status')
+      .select('job_posting_id, title, status')
       .eq('job_posting_id', jobPostingId)
       .eq('company_id', companyId)
       .maybeSingle();
@@ -1306,7 +1812,7 @@ export class JobsService {
     // Block hired/onboarding applicants from applying to new jobs
     const { data: applicantProfile } = await supabase
       .from('applicant_profile')
-      .select('status')
+      .select('status, resume_url, first_name, last_name, cv_parsing_status')
       .eq('applicant_id', applicantId)
       .maybeSingle();
     if (applicantProfile?.status === 'onboarding' || applicantProfile?.status === 'converted_employee') {
@@ -1352,7 +1858,109 @@ export class JobsService {
       }
     }
 
+    // Log recruitment timeline event
+    this.logRecruitmentTimeline(application_id, companyId, 'application_submitted', null, 'submitted', applicantId, 'Applicant').catch(() => {});
+
+    // Trigger Pillar CV parsing asynchronously (fire-and-forget)
+    if (applicantProfile?.resume_url) {
+      this.triggerCvParsingForApplication(
+        application_id,
+        applicantId,
+        applicantProfile.resume_url,
+        `${applicantProfile.first_name ?? ''} ${applicantProfile.last_name ?? ''}`.trim(),
+        jobPostingId,
+      ).catch((err) => this.logger.error(`CV parsing trigger failed for application ${application_id}: ${err?.message}`));
+    }
+
     return data;
+  }
+
+  private async triggerCvParsingForApplication(
+    applicationId: string,
+    applicantId: string,
+    resumeUrl: string,
+    applicantName: string,
+    jobPostingId: string,
+  ): Promise<void> {
+    const supabase = this.supabaseService.getClient();
+
+    // Mark as processing
+    await supabase
+      .from('applicant_profile')
+      .update({ cv_parsing_status: 'processing' })
+      .eq('applicant_id', applicantId);
+
+    try {
+      // Resolve a public/signed URL if it's a storage path
+      let parsableUrl = resumeUrl;
+      if (!resumeUrl.startsWith('http')) {
+        const { data: urlData } = await supabase.storage
+          .from('applicant-resumes')
+          .createSignedUrl(resumeUrl, 60 * 60); // 1-hour URL for Pillar
+        if (urlData?.signedUrl) {
+          parsableUrl = urlData.signedUrl;
+        }
+      }
+
+      // Fetch SFIA demand skills for this job to guide extraction
+      const demandSkills = await this.getJobDemandSkills(jobPostingId);
+      const jobSfiaSkills = demandSkills.map((s) => ({ skill_name: s.skill_name, required_level: s.required_level }));
+
+      const parseResult = await this.pillarService.parseCv(parsableUrl, applicantName);
+
+      if (!parseResult.success) {
+        await supabase
+          .from('applicant_profile')
+          .update({
+            cv_parsing_status: 'failed',
+            cv_parsing_error_message: parseResult.error ?? 'Unknown error',
+          })
+          .eq('applicant_id', applicantId);
+        return;
+      }
+
+      // Extract SFIA skills
+      const sfiaSkills = await this.pillarService.extractSfiaSkills(parseResult, jobSfiaSkills);
+
+      // Persist extracted skills tied to this specific application
+      if (sfiaSkills.length > 0) {
+        const skillRows = sfiaSkills.map((skill) => ({
+          extraction_id: crypto.randomUUID(),
+          application_id: applicationId,
+          applicant_id: applicantId,
+          skill_name: skill.skill_name,
+          candidate_level: skill.candidate_level,
+          years_of_experience: skill.years_of_experience,
+          extracted_from: skill.extracted_from,
+          confidence_score: skill.confidence_score,
+          pillar_parse_response: parseResult.data ?? null,
+        }));
+
+        const { error: insertSkillsErr } = await supabase.from('extracted_cv_skills').insert(skillRows);
+        if (insertSkillsErr) {
+          this.logger.warn(`Failed to persist extracted CV skills for application ${applicationId}: ${insertSkillsErr.message}`);
+        }
+      }
+
+      // Update applicant profile: mark completed + timestamp
+      await supabase
+        .from('applicant_profile')
+        .update({
+          resume_parsed_at: new Date().toISOString(),
+          cv_parsing_status: 'completed',
+          cv_parsing_error_message: null,
+        })
+        .eq('applicant_id', applicantId);
+
+      this.logger.log(`CV parsing completed for application ${applicationId}: ${sfiaSkills.length} skills extracted`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await supabase
+        .from('applicant_profile')
+        .update({ cv_parsing_status: 'failed', cv_parsing_error_message: msg })
+        .eq('applicant_id', applicantId);
+      this.logger.error(`CV parsing failed for application ${applicationId}: ${msg}`);
+    }
   }
 
   async getMyApplicationDetail(applicationId: string, applicantId: string) {
