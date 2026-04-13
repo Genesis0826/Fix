@@ -107,7 +107,7 @@ Add tracking of why ranking changed (SFIA failure, manual override, etc.).
 ```sql
 ALTER TABLE manual_ranking_history
 ADD COLUMN reason VARCHAR(255),  -- 'pillar_failure', 'operator_override', 'sfia_disabled'
-ADD COLUMN triggerred_by VARCHAR(50);
+ADD COLUMN triggered_by VARCHAR(50);  -- NOTE: was `triggerred_by` in original spec (typo corrected)
 
 -- Existing records default to 'manual_override'
 UPDATE manual_ranking_history SET reason = 'manual_override' WHERE reason IS NULL;

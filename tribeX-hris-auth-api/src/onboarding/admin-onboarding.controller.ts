@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -74,5 +74,21 @@ export class AdminOnboardingController {
     @Body() body: { title?: string; description?: string; is_required?: boolean },
   ) {
     return this.onboardingService.updateTemplateItem(itemId, body);
+  }
+
+  /**
+   * Admin/audit revoke endpoint: resets an approved onboarding session back to
+   * "for-review" status. Only System Admins may perform this action.
+   * An optional reason body field is recorded in the audit log.
+   */
+  @Delete('sessions/:sessionId/revoke')
+  @Roles('System Admin')
+  @ApiOperation({ summary: 'System Admin: Revoke an approved onboarding session (audit/compliance)' })
+  revokeSession(
+    @Param('sessionId') sessionId: string,
+    @Body() body: { reason?: string },
+    @Req() req: any,
+  ) {
+    return this.onboardingService.revokeSession(sessionId, req.user.sub_userid, body.reason);
   }
 }

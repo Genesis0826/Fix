@@ -657,6 +657,25 @@ export class OnboardingService {
   async approveSession(sessionId: string, hrUserId?: string) {
     const supabase = this.supabaseService.getClient();
 
+    // -----------------------------------------------------------------------
+    // Enforce 100% completion before approval
+    // HR must not be able to approve an incomplete onboarding session.
+    // -----------------------------------------------------------------------
+    const { data: sessionCheck, error: sessionCheckErr } = await supabase
+      .from('onboarding_sessions')
+      .select('progress_percentage, status')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (sessionCheckErr) throw new BadRequestException(sessionCheckErr.message);
+    if (!sessionCheck) throw new NotFoundException('Onboarding session not found');
+
+    if ((sessionCheck.progress_percentage ?? 0) < 100) {
+      throw new BadRequestException(
+        `Cannot approve: onboarding is only ${sessionCheck.progress_percentage ?? 0}% complete. All required items must be completed before approval.`,
+      );
+    }
+
     // Mark session approved
     await supabase
       .from('onboarding_sessions')
@@ -672,6 +691,11 @@ export class OnboardingService {
     const accountId = (sessionRow as any)?.account_id as string | undefined;
 
     // --- Applicant case: create user_profile + send set-password invite ---
+    // CREDENTIAL TIMING: Employee login credentials (set-password invite) are sent
+    // at THIS point — i.e., when the HR Officer approves the onboarding session.
+    // Credentials are NOT sent at session initiation. This is the intended behaviour:
+    // the employee should only gain system access after HR has reviewed and approved
+    // all onboarding documents and tasks.
     let resolvedUserId = accountId;
     if (accountId) {
       const { data: existingProfile } = await supabase
@@ -862,12 +886,101 @@ export class OnboardingService {
       this.logger.error(`[approveSession] Failed to sync profile/docs: ${(syncErr as any)?.message}`);
     }
 
+    // -----------------------------------------------------------------------
+    // Compensation & Benefits integration handoff event
+    // After onboarding is approved, emit an explicit integration event so that
+    // downstream C&B / payroll systems can be notified. This is fired as
+    // fire-and-forget and must not block the approval response.
+    // -----------------------------------------------------------------------
+    void this.emitCompensationBenefitsHandoff(sessionId, resolvedUserId ?? accountId ?? null, ctx);
+
     return { message: 'Onboarding approved', session_id: sessionId, status: 'approved' };
   }
 
-  // =========================================================
-  // 3. SYSTEM ADMIN METHODS (Kerr's domain)
-  // =========================================================
+  /**
+   * Fire an integration / handoff event for the Compensation & Benefits team
+   * after an onboarding session is approved. This creates an in-app notification
+   * for HR and logs an audit entry so payroll can proceed.
+   * TODO: Replace notification with a real webhook/event bus call when the
+   *       C&B microservice is available.
+   */
+  private async emitCompensationBenefitsHandoff(
+    sessionId: string,
+    userId: string | null,
+    ctx: { accountId: string; companyId: string; employeeName: string; employeeEmail: string } | null,
+  ): Promise<void> {
+    if (!ctx) return;
+    try {
+      await this.notificationsService.notifyAllHRInCompany(ctx.companyId, {
+        type: 'COMPENSATION_BENEFITS_HANDOFF',
+        title: 'Action Required: Compensation & Benefits Setup',
+        message: `Onboarding for ${ctx.employeeName} (session ${sessionId}) has been approved. Please proceed with compensation and benefits configuration in the payroll system.`,
+        metadata: { session_id: sessionId, user_id: userId, employee_email: ctx.employeeEmail },
+      });
+
+      await this.auditService.log(
+        `COMP_BENEFITS_HANDOFF: onboarding approved for ${ctx.employeeName}, session ${sessionId}. Payroll integration event emitted.`,
+        'system',
+        ctx.companyId,
+      );
+    } catch (err) {
+      this.logger.error(`[approveSession] Failed to emit C&B handoff event: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Admin/audit revoke flow for onboarding sessions.
+   * Allows a System Admin to revoke (revert) an approved onboarding session
+   * back to "for-review" state for audit or compliance reasons.
+   * This does NOT delete any data — it only changes the session status and
+   * creates an audit log entry.
+   */
+  async revokeSession(sessionId: string, adminUserId: string, reason?: string): Promise<{
+    message: string;
+    session_id: string;
+    status: string;
+  }> {
+    const supabase = this.supabaseService.getClient();
+
+    const { data: session, error: fetchErr } = await supabase
+      .from('onboarding_sessions')
+      .select('session_id, status, account_id')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (fetchErr) throw new BadRequestException(fetchErr.message);
+    if (!session) throw new NotFoundException('Onboarding session not found');
+
+    const { error: updateErr } = await supabase
+      .from('onboarding_sessions')
+      .update({ status: 'for-review', completed_at: null })
+      .eq('session_id', sessionId);
+
+    if (updateErr) throw new InternalServerErrorException(updateErr.message);
+
+    const ctx = await this.getSessionContext(sessionId);
+    const reasonText = reason ? ` Reason: ${reason}` : '';
+
+    await this.auditService.log(
+      `ONBOARDING_SESSION_REVOKED by admin ${adminUserId}: session ${sessionId} status reset to for-review.${reasonText}`,
+      adminUserId,
+      ctx?.companyId ?? '',
+    );
+
+    if (ctx) {
+      this.notificationsService.createNotification({
+        userId: ctx.accountId,
+        companyId: ctx.companyId,
+        type: 'ONBOARDING_REVOKED',
+        title: 'Onboarding Approval Revoked',
+        message: `Your onboarding approval has been revoked by an administrator and returned to review status.${reasonText}`,
+        metadata: { session_id: sessionId, admin_id: adminUserId },
+      }).catch(() => {});
+    }
+
+    this.logger.warn(`[revokeSession] Session ${sessionId} revoked by admin ${adminUserId}.${reasonText}`);
+    return { message: 'Onboarding session revoked', session_id: sessionId, status: 'for-review' };
+  }
 
   async createTemplate(dto: CreateTemplateDto) {
     const supabase = this.supabaseService.getClient();
