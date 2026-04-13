@@ -1,10 +1,26 @@
 import {
-  Controller, Get, Post, Put, Patch, Body, Param, Query,
-  UseGuards, UseInterceptors, UploadedFile, Req,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ApiTags, ApiOperation, ApiConsumes, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { SaveProfileDto } from './dto/save-profile.dto';
@@ -18,9 +34,13 @@ export class ApplicantPortalOnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
   @Get('session')
-  @ApiOperation({ summary: 'Get applicant onboarding session (4-stage wizard)' })
+  @ApiOperation({
+    summary: 'Get applicant onboarding session (4-stage wizard)',
+  })
   async getMySession(@Req() req: any) {
-    const session = await this.onboardingService.getSessionByApplicantId(req.user.sub_userid);
+    const session = await this.onboardingService.getSessionByApplicantId(
+      req.user.sub_userid,
+    );
     return session ?? null; // explicit null so NestJS sends valid JSON body
   }
 
@@ -48,7 +68,9 @@ export class ApplicantPortalOnboardingController {
   }
 
   @Put('session/:sessionId/profile')
-  @ApiOperation({ summary: 'Save or update personal and emergency contact info' })
+  @ApiOperation({
+    summary: 'Save or update personal and emergency contact info',
+  })
   saveProfile(
     @Param('sessionId') sessionId: string,
     @Body() dto: SaveProfileDto,
@@ -63,10 +85,17 @@ export class ApplicantPortalOnboardingController {
   }
 
   @Patch('items/:onboardingItemId/request-equipment')
-  @ApiOperation({ summary: 'Submit equipment request with delivery preference' })
+  @ApiOperation({
+    summary: 'Submit equipment request with delivery preference',
+  })
   requestEquipment(
     @Param('onboardingItemId') onboardingItemId: string,
-    @Body() body: { is_requested: boolean; delivery_method: 'office' | 'delivery'; delivery_address?: string },
+    @Body()
+    body: {
+      is_requested: boolean;
+      delivery_method: 'office' | 'delivery';
+      delivery_address?: string;
+    },
   ) {
     return this.onboardingService.requestEquipment(onboardingItemId, body);
   }

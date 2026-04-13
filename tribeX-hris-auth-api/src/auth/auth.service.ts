@@ -56,14 +56,17 @@ export class AuthService {
     options?: { userId?: string; companyId?: string; ipAddress?: string },
   ) {
     try {
-      await this.supabaseService.getClient().from('admin_audit_logs').insert({
-        action,
-        performed_by: options?.userId ?? null,
-        company_id: options?.companyId ?? null,
-        target_user_id: null,
-        severity,
-        ip_address: options?.ipAddress ?? null,
-      });
+      await this.supabaseService
+        .getClient()
+        .from('admin_audit_logs')
+        .insert({
+          action,
+          performed_by: options?.userId ?? null,
+          company_id: options?.companyId ?? null,
+          target_user_id: null,
+          severity,
+          ip_address: options?.ipAddress ?? null,
+        });
     } catch {
       // never breaks main flow
     }
@@ -198,15 +201,24 @@ export class AuthService {
       this.logger.error(`DB error during login for: ${identifier}`, error);
       throw new UnauthorizedException('Login failed');
     }
-    if (!user) throw new UnauthorizedException('No account found with that email or username.');
+    if (!user)
+      throw new UnauthorizedException(
+        'No account found with that email or username.',
+      );
 
     if (user.account_status === 'Inactive') {
       void this.writeIncidentLog(
         `SECURITY: Login blocked for ${user.email} — account deactivated`,
         'WARNING',
-        { userId: user.user_id, companyId: user.company_id, ipAddress: getIp(req) ?? undefined },
+        {
+          userId: user.user_id,
+          companyId: user.company_id,
+          ipAddress: getIp(req) ?? undefined,
+        },
       );
-      throw new UnauthorizedException('Your account has been deactivated. Please contact your administrator.');
+      throw new UnauthorizedException(
+        'Your account has been deactivated. Please contact your administrator.',
+      );
     }
 
     if (!user.password_hash) throw new UnauthorizedException('No password set');
@@ -221,7 +233,11 @@ export class AuthService {
         void this.writeIncidentLog(
           `SECURITY: Login blocked for ${user.email} — account not yet active (start date: ${startDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })})`,
           'WARNING',
-          { userId: user.user_id, companyId: user.company_id, ipAddress: getIp(req) ?? undefined },
+          {
+            userId: user.user_id,
+            companyId: user.company_id,
+            ipAddress: getIp(req) ?? undefined,
+          },
         );
         throw new UnauthorizedException(
           `Your account is not active yet. Your start date is ${startDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.`,
@@ -244,7 +260,11 @@ export class AuthService {
         this.writeIncidentLog(
           `SECURITY: Failed login attempt for ${user.email} — incorrect password`,
           'WARNING',
-          { userId: user.user_id, companyId: user.company_id, ipAddress: getIp(req) ?? undefined },
+          {
+            userId: user.user_id,
+            companyId: user.company_id,
+            ipAddress: getIp(req) ?? undefined,
+          },
         ),
       ]);
       throw new UnauthorizedException('Incorrect password. Please try again.');
@@ -255,12 +275,22 @@ export class AuthService {
       { data: roleRow, error: roleError },
       { data: companydb, error: companyError },
     ] = await Promise.all([
-      supabase.from('role').select('role_name').eq('role_id', user.role_id).single(),
-      supabase.from('company').select('company_name').eq('company_id', user.company_id).single(),
+      supabase
+        .from('role')
+        .select('role_name')
+        .eq('role_id', user.role_id)
+        .single(),
+      supabase
+        .from('company')
+        .select('company_name')
+        .eq('company_id', user.company_id)
+        .single(),
     ]);
 
-    if (roleError || !roleRow) throw new UnauthorizedException('Role not found');
-    if (companyError || !companydb) throw new UnauthorizedException('Company not found');
+    if (roleError || !roleRow)
+      throw new UnauthorizedException('Role not found');
+    if (companyError || !companydb)
+      throw new UnauthorizedException('Company not found');
 
     const login_id = crypto.randomUUID();
     const session_id = crypto.randomUUID();
@@ -279,7 +309,13 @@ export class AuthService {
     const [access_token, refresh_token] = await Promise.all([
       this.jwtService.signAsync(accessPayload, { expiresIn: '15m' }),
       this.jwtService.signAsync(
-        { type: 'refresh', sub_userid: user.user_id, role_id: user.role_id, login_id, session_id },
+        {
+          type: 'refresh',
+          sub_userid: user.user_id,
+          role_id: user.role_id,
+          login_id,
+          session_id,
+        },
         { expiresIn: rememberMe ? '30d' : '7d' },
       ),
     ]);
@@ -411,8 +447,7 @@ export class AuthService {
       .eq('role_id', user.role_id)
       .single();
 
-    if (roleErr || !roleRow)
-      throw new UnauthorizedException('Role not found');
+    if (roleErr || !roleRow) throw new UnauthorizedException('Role not found');
 
     const { data: companydb, error: companyErr } = await supabase
       .from('company')

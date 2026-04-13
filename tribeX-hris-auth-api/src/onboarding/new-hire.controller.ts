@@ -1,7 +1,17 @@
 // Routes for the "New Hire Approval" flow (onboarding_submissions table).
 // Applicants fill their profile after being marked hired; HR approves to create their employee account.
 
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { ApplicantJwtAuthGuard } from '../auth/applicant-jwt-auth.guard';
@@ -9,7 +19,14 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 
-const HR_AND_ABOVE = ['Admin', 'System Admin', 'HR Officer', 'HR Recruiter', 'HR Interviewer', 'Manager'];
+const HR_AND_ABOVE = [
+  'Admin',
+  'System Admin',
+  'HR Officer',
+  'HR Recruiter',
+  'HR Interviewer',
+  'Manager',
+];
 
 @ApiTags('New Hire Onboarding')
 @ApiBearerAuth()
@@ -47,7 +64,10 @@ export class NewHireController {
   @Roles(...HR_AND_ABOVE)
   @ApiOperation({ summary: 'HR: list all new hire submissions' })
   getSubmissions(@Req() req: any, @Query('status') status?: string) {
-    return this.onboardingService.getHROnboardingSubmissions(req.user.company_id, status);
+    return this.onboardingService.getHROnboardingSubmissions(
+      req.user.company_id,
+      status,
+    );
   }
 
   @Get('submissions/:id')
@@ -55,19 +75,28 @@ export class NewHireController {
   @Roles(...HR_AND_ABOVE)
   @ApiOperation({ summary: 'HR: get single submission' })
   getSubmission(@Param('id') id: string, @Req() req: any) {
-    return this.onboardingService.getHROnboardingSubmission(id, req.user.company_id);
+    return this.onboardingService.getHROnboardingSubmission(
+      id,
+      req.user.company_id,
+    );
   }
 
   @Post('submissions/:id/approve')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...HR_AND_ABOVE)
-  @ApiOperation({ summary: 'HR: approve submission and create employee account' })
+  @ApiOperation({
+    summary: 'HR: approve submission and create employee account',
+  })
   approveSubmission(
     @Param('id') id: string,
     @Body('role_id') roleId: string,
     @Req() req: any,
   ) {
-    return this.onboardingService.approveOnboardingSubmission(id, roleId, req.user.company_id);
+    return this.onboardingService.approveOnboardingSubmission(
+      id,
+      roleId,
+      req.user.company_id,
+    );
   }
 
   @Post('submissions/:id/reject')
@@ -79,6 +108,10 @@ export class NewHireController {
     @Body('hr_notes') hrNotes: string,
     @Req() req: any,
   ) {
-    return this.onboardingService.rejectOnboardingSubmission(id, hrNotes, req.user.company_id);
+    return this.onboardingService.rejectOnboardingSubmission(
+      id,
+      hrNotes,
+      req.user.company_id,
+    );
   }
 }

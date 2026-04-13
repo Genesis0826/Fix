@@ -3,7 +3,8 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class TimePunchDto {
   @ApiPropertyOptional({
-    description: 'GPS latitude coordinate (optional — omit if location is unavailable)',
+    description:
+      'GPS latitude coordinate (optional — omit if location is unavailable)',
     example: 14.5995,
   })
   @IsOptional()
@@ -13,7 +14,8 @@ export class TimePunchDto {
   latitude?: number;
 
   @ApiPropertyOptional({
-    description: 'GPS longitude coordinate (optional — omit if location is unavailable)',
+    description:
+      'GPS longitude coordinate (optional — omit if location is unavailable)',
     example: 120.9842,
   })
   @IsOptional()

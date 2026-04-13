@@ -53,7 +53,8 @@ export class AdminService {
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to update SFIA settings: ${error.message}`);
+    if (error)
+      throw new Error(`Failed to update SFIA settings: ${error.message}`);
 
     await this.auditService.log(
       `SFIA settings updated: ${Object.keys(updates).join(', ')}`,
@@ -77,12 +78,21 @@ export class AdminService {
       .select()
       .single();
 
-    if (error) throw new Error(`Failed to initialize SFIA settings: ${error.message}`);
+    if (error)
+      throw new Error(`Failed to initialize SFIA settings: ${error.message}`);
     return data;
   }
 
-  async toggleSfiaStatus(companyId: string, enabled: boolean, adminUserId: string) {
-    return this.updateSfiaSettings(companyId, { sfia_enabled: enabled }, adminUserId);
+  async toggleSfiaStatus(
+    companyId: string,
+    enabled: boolean,
+    adminUserId: string,
+  ) {
+    return this.updateSfiaSettings(
+      companyId,
+      { sfia_enabled: enabled },
+      adminUserId,
+    );
   }
 
   async recordSfiaFailure(companyId: string) {

@@ -29,7 +29,6 @@ import { CreateApplicantDto } from './dto/create-applicant.dto';
 import { ApplicantLoginDto } from './dto/applicant-login.dto';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
-
 const APPLICANT_COOKIE = 'applicant_refresh_token';
 
 function cookieOptions(rememberMe = false) {
@@ -52,19 +51,26 @@ export class ApplicantsController {
   @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Applicant self-registration via Career Portal' })
-  register(@Body() dto: CreateApplicantDto, @Query('company') companyId?: string) {
+  register(
+    @Body() dto: CreateApplicantDto,
+    @Query('company') companyId?: string,
+  ) {
     return this.applicantsService.register(dto, companyId);
   }
 
   @Post('login')
   @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Applicant login — returns access token + sets HttpOnly refresh cookie' })
+  @ApiOperation({
+    summary:
+      'Applicant login — returns access token + sets HttpOnly refresh cookie',
+  })
   async login(
     @Body() dto: ApplicantLoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { access_token, refresh_token } = await this.applicantsService.login(dto);
+    const { access_token, refresh_token } =
+      await this.applicantsService.login(dto);
     res.cookie(APPLICANT_COOKIE, refresh_token, cookieOptions(dto.rememberMe));
     return { access_token, refresh_token };
   }
@@ -72,26 +78,38 @@ export class ApplicantsController {
   @Post('refresh')
   @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Issue new access token from applicant refresh cookie' })
+  @ApiOperation({
+    summary: 'Issue new access token from applicant refresh cookie',
+  })
   async refresh(@Req() req: Request) {
-    const token: string | undefined = (req.cookies as Record<string, string>)[APPLICANT_COOKIE];
-    if (!token) throw new UnauthorizedException('No applicant refresh token cookie');
+    const token: string | undefined = (req.cookies as Record<string, string>)[
+      APPLICANT_COOKIE
+    ];
+    if (!token)
+      throw new UnauthorizedException('No applicant refresh token cookie');
     return this.applicantsService.refresh(token);
   }
 
   @Post('logout')
   @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Revoke applicant session and blacklist access token' })
+  @ApiOperation({
+    summary: 'Revoke applicant session and blacklist access token',
+  })
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Headers('authorization') authHeader?: string,
   ) {
-    const refreshToken: string | undefined = (req.cookies as Record<string, string>)[APPLICANT_COOKIE];
-    if (!refreshToken) throw new UnauthorizedException('No applicant refresh token cookie');
+    const refreshToken: string | undefined = (
+      req.cookies as Record<string, string>
+    )[APPLICANT_COOKIE];
+    if (!refreshToken)
+      throw new UnauthorizedException('No applicant refresh token cookie');
 
-    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+    const accessToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : undefined;
     await this.applicantsService.logout(refreshToken, accessToken);
 
     const isProd = process.env.NODE_ENV === 'production';
@@ -114,7 +132,9 @@ export class ApplicantsController {
   @Post('resend-verification')
   @UseGuards(ThrottlerGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend verification email to an unverified applicant' })
+  @ApiOperation({
+    summary: 'Resend verification email to an unverified applicant',
+  })
   resendVerification(@Body() body: { email: string }) {
     return this.applicantsService.resendVerification(body.email);
   }
@@ -138,7 +158,9 @@ export class ApplicantsController {
   @Post('me/resume')
   @UseGuards(ApplicantJwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Upload or replace applicant resume (PDF/DOC/DOCX, max 5MB)' })
+  @ApiOperation({
+    summary: 'Upload or replace applicant resume (PDF/DOC/DOCX, max 5MB)',
+  })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   uploadResume(@Req() req: any, @UploadedFile() file: Express.Multer.File) {

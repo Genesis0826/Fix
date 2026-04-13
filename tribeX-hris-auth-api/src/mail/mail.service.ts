@@ -111,8 +111,8 @@ export class MailService {
     jobTitle: string;
     stageLabel?: string;
     isReschedule?: boolean;
-    scheduledDate: string;   // "YYYY-MM-DD"
-    scheduledTime: string;   // "HH:MM"
+    scheduledDate: string; // "YYYY-MM-DD"
+    scheduledTime: string; // "HH:MM"
     durationMinutes: number;
     format: string;
     location?: string | null;
@@ -126,17 +126,27 @@ export class MailService {
       video: 'Video Call',
       phone: 'Phone Call',
     };
-    const fmtDate = new Date(`${opts.scheduledDate}T${opts.scheduledTime}`).toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    const fmtDate = new Date(
+      `${opts.scheduledDate}T${opts.scheduledTime}`,
+    ).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     });
-    const fmtTime = new Date(`2000-01-01T${opts.scheduledTime}`).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit',
+    const fmtTime = new Date(
+      `2000-01-01T${opts.scheduledTime}`,
+    ).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
     });
 
     const action = opts.isReschedule ? 'Rescheduled' : 'Scheduled';
     const stagePrefix = opts.stageLabel ? `${opts.stageLabel} ` : '';
     const subjectLine = `${stagePrefix}Interview ${action} – ${opts.jobTitle}`;
-    const headerLine = opts.stageLabel ? `${opts.stageLabel} Interview ${action}` : `Interview ${action}`;
+    const headerLine = opts.stageLabel
+      ? `${opts.stageLabel} Interview ${action}`
+      : `Interview ${action}`;
     const bodyIntro = opts.isReschedule
       ? `Hi <strong>${opts.applicantName}</strong>, your <strong>${opts.stageLabel ?? 'interview'}</strong> for <strong>${opts.jobTitle}</strong> has been rescheduled. Here are the updated details:`
       : `Hi <strong>${opts.applicantName}</strong>, your <strong>${opts.stageLabel ?? 'interview'}</strong> for <strong>${opts.jobTitle}</strong> has been scheduled. Here are the details:`;
@@ -150,8 +160,8 @@ export class MailService {
     const locationRow = opts.meetingLink
       ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Meeting Link</td><td style="padding:8px 0;font-size:13px;"><a href="${opts.meetingLink}" style="color:#1e3a8a;">${opts.meetingLink}</a></td></tr>`
       : opts.location
-      ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Location</td><td style="padding:8px 0;font-size:13px;">${opts.location}</td></tr>`
-      : '';
+        ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Location</td><td style="padding:8px 0;font-size:13px;">${opts.location}</td></tr>`
+        : '';
 
     const notesSection = opts.notes
       ? `<div style="margin-top:20px;padding:16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
@@ -223,20 +233,43 @@ export class MailService {
     scheduledTime: string;
   }): Promise<void> {
     const actionLabel = {
-      accepted:             'Accepted the Interview',
-      declined:             'Declined the Interview',
+      accepted: 'Accepted the Interview',
+      declined: 'Declined the Interview',
       reschedule_requested: 'Requested a Reschedule',
     }[opts.action];
 
-    const statusColor  = opts.action === 'accepted' ? '#16a34a' : opts.action === 'declined' ? '#dc2626' : '#d97706';
-    const statusBg     = opts.action === 'accepted' ? '#f0fdf4' : opts.action === 'declined' ? '#fef2f2' : '#fffbeb';
-    const statusBorder = opts.action === 'accepted' ? '#bbf7d0' : opts.action === 'declined' ? '#fecaca' : '#fde68a';
+    const statusColor =
+      opts.action === 'accepted'
+        ? '#16a34a'
+        : opts.action === 'declined'
+          ? '#dc2626'
+          : '#d97706';
+    const statusBg =
+      opts.action === 'accepted'
+        ? '#f0fdf4'
+        : opts.action === 'declined'
+          ? '#fef2f2'
+          : '#fffbeb';
+    const statusBorder =
+      opts.action === 'accepted'
+        ? '#bbf7d0'
+        : opts.action === 'declined'
+          ? '#fecaca'
+          : '#fde68a';
 
-    const fmtDate = new Date(`${opts.scheduledDate}T${opts.scheduledTime}`).toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    const fmtDate = new Date(
+      `${opts.scheduledDate}T${opts.scheduledTime}`,
+    ).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     });
-    const fmtTime = new Date(`2000-01-01T${opts.scheduledTime}`).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit',
+    const fmtTime = new Date(
+      `2000-01-01T${opts.scheduledTime}`,
+    ).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
     });
 
     const noteSection = opts.note
@@ -292,11 +325,19 @@ export class MailService {
     stageLabel: string;
     reason?: string | null;
   }): Promise<void> {
-    const fmtDate = new Date(`${opts.scheduledDate}T${opts.scheduledTime}`).toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    const fmtDate = new Date(
+      `${opts.scheduledDate}T${opts.scheduledTime}`,
+    ).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     });
-    const fmtTime = new Date(`2000-01-01T${opts.scheduledTime}`).toLocaleTimeString('en-US', {
-      hour: 'numeric', minute: '2-digit',
+    const fmtTime = new Date(
+      `2000-01-01T${opts.scheduledTime}`,
+    ).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
     });
 
     const reasonSection = opts.reason
@@ -452,6 +493,206 @@ export class MailService {
     }
   }
 
+  async sendSfiaFallbackEmail(opts: {
+    to: string;
+    recipientName: string;
+    companyId: string;
+    failureCount: number;
+    jobTitle?: string | null;
+  }): Promise<void> {
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `⚠️ SFIA Auto-Disabled – Manual Ranking Now Active`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:linear-gradient(135deg,#7c2d12 0%,#9a3412 100%);padding:28px 24px;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:rgba(255,255,255,0.6);letter-spacing:0.14em;">Blues Clues HRIS – System Alert</p>
+              <h1 style="margin:0;font-size:20px;color:#ffffff;">SFIA Ranking Auto-Disabled</h1>
+            </div>
+            <div style="padding:24px;">
+              <p style="margin:0 0 16px;font-size:14px;color:#374151;">Hi <strong>${opts.recipientName}</strong>,</p>
+              <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:16px 20px;margin-bottom:16px;">
+                <p style="margin:0;font-size:14px;font-weight:600;color:#991b1b;">
+                  SFIA automatic ranking has been <strong>auto-disabled</strong> due to ${opts.failureCount} consecutive Pillar service failures.
+                </p>
+              </div>
+              <p style="font-size:13px;color:#374151;">
+                The system has automatically switched to <strong>manual ranking mode</strong>.
+                All candidate rankings must now be set manually until SFIA is re-enabled by a System Administrator.
+              </p>
+              ${opts.jobTitle ? `<p style="font-size:13px;color:#374151;">Affected job: <strong>${opts.jobTitle}</strong></p>` : ''}
+              <div style="margin-top:20px;padding:14px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;">
+                <p style="margin:0;font-size:12px;color:#92400e;">
+                  <strong>Action Required:</strong> Please review affected job postings and manually rank candidates as needed.
+                  Contact your System Administrator to re-enable SFIA once the Pillar service is restored.
+                </p>
+              </div>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:14px 24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · Automated system alert</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send SFIA fallback email', error);
+    }
+  }
+
+  async sendApplicationStatusEmail(opts: {
+    to: string;
+    applicantName: string;
+    jobTitle: string;
+    status: 'shortlisted' | 'on_hold' | 'rejected';
+    notes?: string | null;
+  }): Promise<void> {
+    const statusConfig = {
+      shortlisted: {
+        label: 'Shortlisted',
+        color: '#16a34a',
+        bg: '#f0fdf4',
+        border: '#bbf7d0',
+        message: `Congratulations! You have been <strong>shortlisted</strong> for the position of <strong>${opts.jobTitle}</strong>. Our HR team will be in touch soon regarding the next steps.`,
+      },
+      on_hold: {
+        label: 'On Hold',
+        color: '#d97706',
+        bg: '#fffbeb',
+        border: '#fde68a',
+        message: `Your application for <strong>${opts.jobTitle}</strong> has been placed <strong>on hold</strong>. We are still reviewing applications and will notify you when a decision has been made.`,
+      },
+      rejected: {
+        label: 'Not Selected',
+        color: '#dc2626',
+        bg: '#fef2f2',
+        border: '#fecaca',
+        message: `Thank you for your interest in the position of <strong>${opts.jobTitle}</strong>. After careful consideration, we regret to inform you that your application has not been selected for this role. We encourage you to apply for future openings.`,
+      },
+    };
+
+    const cfg = statusConfig[opts.status];
+    const notesSection = opts.notes
+      ? `<div style="margin-top:16px;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+           <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;letter-spacing:0.08em;">Note from HR</p>
+           <p style="margin:0;font-size:13px;color:#374151;white-space:pre-wrap;">${opts.notes}</p>
+         </div>`
+      : '';
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `Application Update: ${opts.jobTitle} – ${cfg.label}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:linear-gradient(135deg,#0f172a 0%,#172554 55%,#134e4a 100%);padding:28px 24px;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:rgba(255,255,255,0.5);letter-spacing:0.14em;">Blues Clues HRIS</p>
+              <h1 style="margin:0;font-size:20px;color:#ffffff;">Application Status Update</h1>
+            </div>
+            <div style="padding:24px;">
+              <p style="margin:0 0 16px;font-size:14px;color:#374151;">Hi <strong>${opts.applicantName}</strong>,</p>
+              <div style="background:${cfg.bg};border:1px solid ${cfg.border};border-radius:10px;padding:16px 20px;margin-bottom:16px;">
+                <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:${cfg.color};letter-spacing:0.08em;">Status: ${cfg.label}</p>
+                <p style="margin:0;font-size:14px;color:#374151;">${cfg.message}</p>
+              </div>
+              ${notesSection}
+              <p style="margin-top:20px;font-size:13px;color:#6b7280;">Log in to your applicant portal to view your full application status.</p>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:14px 24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · This is an automated notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send application status email', error);
+    }
+  }
+
+  async sendOfferEmail(opts: {
+    to: string;
+    applicantName: string;
+    jobTitle: string;
+    positionTitle?: string | null;
+    department?: string | null;
+    baseSalary?: number | null;
+    currency?: string | null;
+    payFrequency?: string | null;
+    startDate?: string | null;
+    benefits?: string | null;
+    notes?: string | null;
+    portalUrl?: string;
+  }): Promise<void> {
+    const salary = opts.baseSalary
+      ? `${opts.currency ?? 'PHP'} ${opts.baseSalary.toLocaleString()} / ${opts.payFrequency ?? 'month'}`
+      : 'To be discussed';
+
+    const salaryRow = `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Compensation</td><td style="padding:8px 0;font-size:13px;font-weight:600;">${salary}</td></tr>`;
+    const startRow = opts.startDate
+      ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Start Date</td><td style="padding:8px 0;font-size:13px;">${opts.startDate}</td></tr>`
+      : '';
+    const deptRow = opts.department
+      ? `<tr><td style="padding:8px 0;color:#6b7280;font-size:13px;">Department</td><td style="padding:8px 0;font-size:13px;">${opts.department}</td></tr>`
+      : '';
+    const benefitsSection = opts.benefits
+      ? `<div style="margin-top:16px;padding:14px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+           <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#15803d;letter-spacing:0.08em;">Benefits</p>
+           <p style="margin:0;font-size:13px;color:#374151;white-space:pre-wrap;">${opts.benefits}</p>
+         </div>`
+      : '';
+    const notesSection = opts.notes
+      ? `<div style="margin-top:16px;padding:14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+           <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:#6b7280;letter-spacing:0.08em;">Additional Notes</p>
+           <p style="margin:0;font-size:13px;color:#374151;white-space:pre-wrap;">${opts.notes}</p>
+         </div>`
+      : '';
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: opts.to,
+        subject: `Job Offer – ${opts.positionTitle ?? opts.jobTitle}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:540px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            <div style="background:linear-gradient(135deg,#0f172a 0%,#172554 55%,#134e4a 100%);padding:32px 28px;">
+              <p style="margin:0 0 4px;font-size:11px;font-weight:bold;text-transform:uppercase;color:rgba(255,255,255,0.5);letter-spacing:0.14em;">Blues Clues HRIS</p>
+              <h1 style="margin:0;font-size:22px;color:#ffffff;">You've Received a Job Offer!</h1>
+            </div>
+            <div style="padding:28px;">
+              <p style="margin:0 0 16px;font-size:14px;color:#374151;">
+                Hi <strong>${opts.applicantName}</strong>, we are pleased to offer you the position of
+                <strong>${opts.positionTitle ?? opts.jobTitle}</strong>. Please review the offer details below.
+              </p>
+              <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:20px 24px;margin-bottom:16px;">
+                <table style="width:100%;border-collapse:collapse;">
+                  <tr>
+                    <td style="padding:8px 0;color:#6b7280;font-size:13px;width:130px;">Position</td>
+                    <td style="padding:8px 0;font-size:13px;font-weight:600;color:#1e3a8a;">${opts.positionTitle ?? opts.jobTitle}</td>
+                  </tr>
+                  ${deptRow}
+                  ${salaryRow}
+                  ${startRow}
+                </table>
+              </div>
+              ${benefitsSection}
+              ${notesSection}
+              <p style="margin-top:24px;font-size:14px;color:#374151;">
+                To accept or decline this offer, please log in to your applicant portal.
+              </p>
+            </div>
+            <div style="background:#f9fafb;border-top:1px solid #e5e7eb;padding:16px 28px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Blues Clues HRIS · This is an automated notification</p>
+            </div>
+          </div>
+        `,
+      });
+    } catch (error) {
+      this.logger.error('Failed to send offer email', error);
+    }
+  }
+
   async sendProfileChangeReviewedEmail(opts: {
     to: string;
     employeeName: string;
@@ -459,7 +700,8 @@ export class MailService {
     status: 'approved' | 'rejected';
     reviewReason: string;
   }): Promise<void> {
-    const fieldLabel = opts.fieldType === 'legal_name' ? 'Legal Name' : 'Bank Account';
+    const fieldLabel =
+      opts.fieldType === 'legal_name' ? 'Legal Name' : 'Bank Account';
     const statusLabel = opts.status === 'approved' ? 'Approved' : 'Rejected';
     const statusColor = opts.status === 'approved' ? '#16a34a' : '#dc2626';
     const statusBg = opts.status === 'approved' ? '#f0fdf4' : '#fef2f2';

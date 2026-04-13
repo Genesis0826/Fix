@@ -108,7 +108,9 @@ export class TimekeepingController {
   @Get('employees')
   @UseGuards(RolesGuard)
   @Roles(...HR_AND_ABOVE)
-  @ApiOperation({ summary: 'HR/Manager: List employees eligible for timekeeping' })
+  @ApiOperation({
+    summary: 'HR/Manager: List employees eligible for timekeeping',
+  })
   getEmployees(@Req() req: any) {
     return this.timekeepingService.getEmployeeUsers(req.user.company_id);
   }
@@ -129,7 +131,11 @@ export class TimekeepingController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.timekeepingService.getAllTimesheets(req.user.company_id, from, to);
+    return this.timekeepingService.getAllTimesheets(
+      req.user.company_id,
+      from,
+      to,
+    );
   }
 
   @Get('timesheets/:userId/:date')

@@ -1,7 +1,14 @@
 // src/applicants/dto/create-applicant.dto.ts
 // Fields for applicant self-registration on the Career Portal.
 
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateApplicantDto {

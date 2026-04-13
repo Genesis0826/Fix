@@ -1,4 +1,10 @@
-import { IsEnum, IsString, IsObject, IsOptional, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsString,
+  IsObject,
+  IsOptional,
+  MinLength,
+} from 'class-validator';
 
 export class CreateChangeRequestDto {
   @IsEnum(['legal_name', 'bank'])
